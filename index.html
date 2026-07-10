@@ -2477,6 +2477,13 @@
               loadTicker(key);
               filterNewsByTag(key);
             });
+          } else {
+            badge.addEventListener('click', () => {
+              filterNewsByTag(key);
+            });
+          }
+          trendingContainer.appendChild(badge);
+        });
       }
     }
 
