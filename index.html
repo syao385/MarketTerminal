@@ -1908,24 +1908,34 @@
         case 'reddit_wsb': url = 'https://www.reddit.com/r/wallstreetbets/hot.rss'; break;
         case 'google_news':
           const q = query || 'market stocks premarket economy';
-          url = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
+          url = `https://news.google.com/rss/search?q=${encodeURIComponent(q + ' when:7d')}&hl=en-US&gl=US&ceid=US:en`;
           break;
       }
 
+      // Helper to wrap URL with AllOrigins raw proxy and cache-buster timestamp
+      const getProxiedUrl = (targetUrl) => {
+        const cb = (targetUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
+        return `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl + cb)}`;
+      };
+
       try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Fetch failed: " + res.status);
+        const proxiedUrl = getProxiedUrl(url);
+        const res = await fetch(proxiedUrl);
+        if (!res.ok) throw new Error("Primary proxy fetch failed: " + res.status);
         const xml = await res.text();
         const parsed = parseXmlFeed(xml);
         if (!parsed || parsed.length === 0) throw new Error("Empty XML parsed");
         return parsed;
       } catch (err) {
-        console.warn(`Primary direct feed fetch failed for ${feedKey}, running fallback...`, err);
+        console.warn(`Primary proxied feed fetch failed for ${feedKey}, running fallback...`, err);
         try {
-          const fbQuery = feedKey.includes('reddit') ? `site:reddit.com/r/${feedKey.split('_')[1]}` : `${feedKey} business markets`;
+          let fbQuery = feedKey.includes('reddit') ? `site:reddit.com/r/${feedKey.split('_')[1]} markets` : `${feedKey} business markets`;
+          fbQuery += ' when:7d'; // Force freshness within last 7 days
+
           const fbUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(fbQuery)}&hl=en-US&gl=US&ceid=US:en`;
-          const res = await fetch(fbUrl);
-          if (!res.ok) throw new Error("Fallback fetch failed");
+          const proxiedFbUrl = getProxiedUrl(fbUrl);
+          const res = await fetch(proxiedFbUrl);
+          if (!res.ok) throw new Error("Fallback proxied fetch failed");
           const xml = await res.text();
           const parsed = parseXmlFeed(xml);
           if (!parsed || parsed.length === 0) throw new Error("Empty fallback XML");
