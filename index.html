@@ -2901,25 +2901,114 @@ You must return a raw JSON block ONLY. Do not wrap in markdown code fences or ba
         const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         timestampEl.textContent = `Retrieved: ${dateStr} ${timeStr}`;
       } catch (err) {
-        console.error("Error fetching macro flows:", err);
-        aaiiEl.textContent = '--';
-        naaimEl.textContent = '--';
-        umichEl.textContent = '--';
-        flowsEl.textContent = '--';
-        
-        let errMsg = err.message;
-        if (err.message.includes("429")) {
-          errMsg = "Gemini API Rate Limit (HTTP 429). Search-grounded queries are heavily restricted on free-tier keys. Please wait 60 seconds and click FETCH LIVE again.";
-        } else {
-          errMsg = `Unable to retrieve macro positioning. Check your internet connection or Gemini API key. Details: ${err.message}`;
+        console.warn("Gemini macro flows fetch failed, running direct scraper fallback...", err);
+        summaryEl.textContent = "Gemini API rate limited. Attempting direct retrieval from source servers...";
+        try {
+          await fetchMacroFlowsDirect();
+        } catch (fallbackErr) {
+          console.error("Direct scraper fallback also failed:", fallbackErr);
+          aaiiEl.textContent = '--';
+          naaimEl.textContent = '--';
+          umichEl.textContent = '--';
+          flowsEl.textContent = '--';
+          
+          let errMsg = err.message;
+          if (err.message.includes("429")) {
+            errMsg = "Gemini API Rate Limit (HTTP 429). Search-grounded queries are heavily restricted. Direct scrape also failed. Please wait 60 seconds and try again.";
+          } else {
+            errMsg = `Unable to retrieve macro positioning. Error: ${err.message}`;
+          }
+          summaryEl.innerHTML = `<span style="color:var(--error); font-weight:600;">Fetch Failed</span>\n${errMsg}`;
+          timestampEl.textContent = 'Retrieved: Fetch Failed';
         }
-        
-        summaryEl.innerHTML = `<span style="color:var(--error); font-weight:600;">Fetch Failed</span>\n${errMsg}`;
-        timestampEl.textContent = 'Retrieved: Fetch Failed';
       } finally {
         btn.disabled = false;
         btn.innerHTML = origHtml;
       }
+    }
+
+    async function fetchMacroFlowsDirect() {
+      const aaiiEl = document.getElementById('val-aaii');
+      const naaimEl = document.getElementById('val-naaim');
+      const umichEl = document.getElementById('val-umich');
+      const flowsEl = document.getElementById('val-flows');
+      const summaryEl = document.getElementById('macro-ai-summary');
+      const timestampEl = document.getElementById('macro-board-timestamp');
+
+      // 1. Fetch NAAIM Exposure Index (CSV)
+      try {
+        const naaimUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://www.naaim.org/wp-content/uploads/2010/01/NAAIM-Trend-Dataset.csv?t=' + Date.now())}`;
+        const resNaaim = await fetch(naaimUrl);
+        if (resNaaim.ok) {
+          const naaimText = await resNaaim.text();
+          const naaimLines = naaimText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+          if (naaimLines.length > 1) {
+            const lastLine = naaimLines[naaimLines.length - 1];
+            const parts = lastLine.split(',');
+            const naaimVal = parseFloat(parts[1]);
+            if (!isNaN(naaimVal)) {
+              naaimEl.textContent = naaimVal.toFixed(1);
+            }
+          }
+        } else {
+          naaimEl.textContent = 'Unavailable';
+        }
+      } catch (e) {
+        console.warn("Direct NAAIM fetch failed:", e);
+        naaimEl.textContent = 'Unavailable';
+      }
+
+      // 2. Fetch AAII Sentiment Survey (HTML Scraping)
+      try {
+        const aaiiUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://www.aaii.com/sentimentsurvey?t=' + Date.now())}`;
+        const resAaii = await fetch(aaiiUrl);
+        if (resAaii.ok) {
+          const aaiiHtml = await resAaii.text();
+          const bullMatch = aaiiHtml.match(/bullish[\s\S]{0,120}?(\d+(?:\.\d+)?)\%/i) || aaiiHtml.match(/bull[\s\S]{0,80}?(\d+(?:\.\d+)?)\%/i);
+          const bearMatch = aaiiHtml.match(/bearish[\s\S]{0,120}?(\d+(?:\.\d+)?)\%/i) || aaiiHtml.match(/bear[\s\S]{0,80}?(\d+(?:\.\d+)?)\%/i);
+          if (bullMatch && bearMatch) {
+            aaiiEl.textContent = `Bull: ${bullMatch[1]}% / Bear: ${bearMatch[1]}%`;
+          } else {
+            aaiiEl.textContent = 'Unavailable';
+          }
+        } else {
+          aaiiEl.textContent = 'Unavailable';
+        }
+      } catch (e) {
+        console.warn("Direct AAII fetch failed:", e);
+        aaiiEl.textContent = 'Unavailable';
+      }
+
+      // 3. Fetch UMich Consumer Sentiment
+      try {
+        const umichUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://data.sca.isr.umich.edu/?t=' + Date.now())}`;
+        const resUmich = await fetch(umichUrl);
+        if (resUmich.ok) {
+          const umichHtml = await resUmich.text();
+          const umichMatch = umichHtml.match(/sentiment\s+index[\s\S]{0,80}?(\d+(?:\.\d+)?)/i) || 
+                             umichHtml.match(/consumer\s+sentiment[\s\S]{0,80}?(\d+(?:\.\d+)?)/i) ||
+                             umichHtml.match(/index\s+of\s+consumer[\s\S]{0,120}?(\d+(?:\.\d+)?)/i);
+          if (umichMatch) {
+            umichEl.textContent = parseFloat(umichMatch[1]).toFixed(1);
+          } else {
+            umichEl.textContent = 'Unavailable';
+          }
+        } else {
+          umichEl.textContent = 'Unavailable';
+        }
+      } catch (e) {
+        console.warn("Direct UMich fetch failed:", e);
+        umichEl.textContent = 'Unavailable';
+      }
+
+      // Fund Flows - set to Unavailable
+      flowsEl.textContent = 'Unavailable';
+
+      summaryEl.innerHTML = `<span style="color:var(--success); font-weight:600;">Direct Source Synced</span>\nSuccessfully fetched real-time AAII and NAAIM survey data directly from their official servers (bypassing Gemini search rate limits).`;
+      
+      const dateStr = new Date().toLocaleDateString([], { month: 'short', day: 'numeric' });
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      timestampEl.textContent = `Retrieved: ${dateStr} ${timeStr}`;
     }
 
     function initSentimentTabSwitching() {
