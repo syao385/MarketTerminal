@@ -1899,6 +1899,46 @@
       return items;
     }
 
+    async function fetchWithProxy(targetUrl) {
+      const cb = (targetUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
+      const finalTarget = targetUrl + cb;
+
+      const proxies = [
+        u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
+      ];
+
+      for (const proxyFn of proxies) {
+        try {
+          const proxiedUrl = proxyFn(finalTarget);
+          const res = await fetch(proxiedUrl, {
+            headers: {
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache'
+            }
+          });
+          if (res.ok) {
+            const text = await res.text();
+            if (text && text.trim().length > 100) {
+              return text;
+            }
+          }
+        } catch (e) {
+          console.warn("Proxy failed, trying next...", e);
+        }
+      }
+      
+      const directRes = await fetch(finalTarget, {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
+      if (directRes.ok) return await directRes.text();
+
+      throw new Error("All proxies and direct fetches failed");
+    }
+
     async function fetchFeed(feedKey, query = '') {
       let url = '';
       switch (feedKey) {
@@ -1912,31 +1952,19 @@
           break;
       }
 
-      // Helper to wrap URL with AllOrigins raw proxy and cache-buster timestamp
-      const getProxiedUrl = (targetUrl) => {
-        const cb = (targetUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
-        return `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl + cb)}`;
-      };
-
       try {
-        const proxiedUrl = getProxiedUrl(url);
-        const res = await fetch(proxiedUrl);
-        if (!res.ok) throw new Error("Primary proxy fetch failed: " + res.status);
-        const xml = await res.text();
+        const xml = await fetchWithProxy(url);
         const parsed = parseXmlFeed(xml);
         if (!parsed || parsed.length === 0) throw new Error("Empty XML parsed");
         return parsed;
       } catch (err) {
-        console.warn(`Primary proxied feed fetch failed for ${feedKey}, running fallback...`, err);
+        console.warn(`Primary feed fetch failed for ${feedKey}, running fallback...`, err);
         try {
           let fbQuery = feedKey.includes('reddit') ? `site:reddit.com/r/${feedKey.split('_')[1]} markets` : `${feedKey} business markets`;
-          fbQuery += ' when:7d'; // Force freshness within last 7 days
+          fbQuery += ' when:7d';
 
           const fbUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(fbQuery)}&hl=en-US&gl=US&ceid=US:en`;
-          const proxiedFbUrl = getProxiedUrl(fbUrl);
-          const res = await fetch(proxiedFbUrl);
-          if (!res.ok) throw new Error("Fallback proxied fetch failed");
-          const xml = await res.text();
+          const xml = await fetchWithProxy(fbUrl);
           const parsed = parseXmlFeed(xml);
           if (!parsed || parsed.length === 0) throw new Error("Empty fallback XML");
           return parsed;
