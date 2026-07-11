@@ -730,6 +730,10 @@
           <button class="tab-btn" data-feed="reddit_wsb">r/wsb</button>
           <button class="tab-btn" data-feed="google_news">GOOGLE</button>
         </div>
+        <!-- News Feed Banner / Warning Tip -->
+        <div id="news-connection-notice" style="display: none; padding: 6px 12px; font-size: 10px; line-height: 1.4; border-bottom: 1px solid var(--border); font-family: monospace; border-left: 2px solid var(--warning); background: rgba(234, 179, 8, 0.05); color: var(--txt-sec);">
+          <span>Tip: CORS proxies are rate-limited. Run <code style="color:var(--primary); font-weight:600;">proxy-server.js</code> or add a free <code style="color:var(--success); font-weight:600;">Finnhub Key</code> in Settings for reliable news.</span>
+        </div>
         <!-- Google Search Option -->
         <div class="google-bar" id="google-search-bar" style="display: none;">
           <input type="text" id="google-query-input" placeholder="Query (e.g. Federal Reserve)...">
@@ -942,6 +946,11 @@
           <span class="help-txt">Choose an active model or type a custom name (e.g. gemini-3.5-flash is current and active).</span>
         </div>
         <div class="form-grp">
+          <label for="finnhub-key-input">Finnhub API Key</label>
+          <input type="password" id="finnhub-key-input" placeholder="Paste Finnhub Key here...">
+          <span class="help-txt">Get your free key at <a href="https://finnhub.io/" target="_blank">Finnhub.io</a> to enable direct, CORS-bypassed market & stock news.</span>
+        </div>
+        <div class="form-grp">
           <label>Reset Paper Trading Portfolio</label>
           <div class="reset-btns">
             <button class="btn-sec" onclick="resetPortfolio(1000.00)">Reset to $1,000</button>
@@ -970,12 +979,15 @@
     let chartInstance = null; // Canvas fallback chart context if tv.js is offline
     
     // News Caching & Analytics State
+    let localProxyActive = false;
     let cachedFeeds = {
       wsj: [],
       cnbc: [],
       reddit_stocks: [],
       reddit_wsb: [],
-      google_news: []
+      google_news: [],
+      general: [],
+      company: []
     };
     
     // Client-side Local Market Simulator (Provides local ticking price feeds)
@@ -1403,8 +1415,13 @@
         if (googleInput) googleInput.value = activeTicker;
 
         const activeNewsTab = document.querySelector('#news-feed-tabs .tab-btn.active');
-        if (activeNewsTab && activeNewsTab.getAttribute('data-feed') === 'google_news') {
-          loadNewsFeed('google_news', activeTicker);
+        if (activeNewsTab) {
+          const feedKey = activeNewsTab.getAttribute('data-feed');
+          if (feedKey === 'google_news') {
+            loadNewsFeed('google_news', activeTicker);
+          } else if (feedKey === 'company') {
+            loadNewsFeed('company');
+          }
         }
       } catch (err) {
         console.error(err);
@@ -1939,7 +1956,146 @@
       throw new Error("All proxies and direct fetches failed");
     }
 
+    async function detectLocalProxy() {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 800);
+        
+        const res = await fetch('http://localhost:3000/ping', { signal: controller.signal });
+        clearTimeout(timeoutId);
+        
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'ok') {
+            localProxyActive = true;
+            console.log("Local proxy detected at http://localhost:3000. Routing feeds through local proxy.");
+          }
+        }
+      } catch (e) {
+        localProxyActive = false;
+        console.log("Local proxy is offline. Using Finnhub/standing CORS proxies.");
+      }
+    }
+
+    function updateNewsTabVisibility() {
+      const container = document.getElementById('news-feed-tabs');
+      if (!container) return;
+
+      const finnhubKey = localStorage.getItem('finnhub_api_key');
+      if (finnhubKey && finnhubKey.trim().length > 0) {
+        // Finnhub tab layout
+        container.innerHTML = `
+          <button class="tab-btn active" data-feed="general">MARKET NEWS</button>
+          <button class="tab-btn" data-feed="company">COMPANY NEWS</button>
+          <button class="tab-btn" data-feed="reddit_stocks">r/stocks</button>
+          <button class="tab-btn" data-feed="reddit_wsb">r/wsb</button>
+        `;
+      } else {
+        // Standard RSS layout
+        container.innerHTML = `
+          <button class="tab-btn active" data-feed="all">ALL</button>
+          <button class="tab-btn" data-feed="wsj">WSJ</button>
+          <button class="tab-btn" data-feed="cnbc">CNBC</button>
+          <button class="tab-btn" data-feed="reddit_stocks">r/stocks</button>
+          <button class="tab-btn" data-feed="reddit_wsb">r/wsb</button>
+          <button class="tab-btn" data-feed="google_news">GOOGLE</button>
+        `;
+      }
+
+      // Re-attach tab click listeners
+      const newsTabs = container.querySelectorAll('.tab-btn');
+      newsTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          newsTabs.forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+
+          const feedKey = tab.getAttribute('data-feed');
+          document.getElementById('google-search-bar').style.display = feedKey === 'google_news' ? 'flex' : 'none';
+          
+          activeNewsFilterTag = null;
+          const bar = document.getElementById('news-filter-bar');
+          if (bar) bar.style.display = 'none';
+
+          loadNewsFeed(feedKey);
+        });
+      });
+
+      // Update notice banner visibility
+      const noticeBar = document.getElementById('news-connection-notice');
+      if (noticeBar) {
+        if (!localProxyActive && (!finnhubKey || finnhubKey.trim().length === 0)) {
+          noticeBar.style.display = 'block';
+        } else {
+          noticeBar.style.display = 'none';
+        }
+      }
+    }
+
+    async function fetchFinnhubNews(feedKey, query = '') {
+      const finnhubKey = localStorage.getItem('finnhub_api_key');
+      if (!finnhubKey || finnhubKey.trim().length === 0) {
+        throw new Error("Finnhub API key is not configured.");
+      }
+
+      let endpoint = '';
+      if (feedKey === 'general') {
+        endpoint = `https://finnhub.io/api/v1/news?category=general&token=${finnhubKey}`;
+      } else if (feedKey === 'company') {
+        const symbol = activeTicker || 'AAPL';
+        const toDate = new Date();
+        const fromDate = new Date();
+        fromDate.setDate(toDate.getDate() - 7);
+        
+        const pad = (n) => String(n).padStart(2, '0');
+        const formatDateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        
+        endpoint = `https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${formatDateStr(fromDate)}&to=${formatDateStr(toDate)}&token=${finnhubKey}`;
+      } else {
+        throw new Error("Unsupported Finnhub feed type: " + feedKey);
+      }
+
+      const res = await fetch(endpoint);
+      if (!res.ok) throw new Error(`Finnhub request failed: ${res.status}`);
+      const data = await res.json();
+      if (!Array.isArray(data)) throw new Error("Invalid response format from Finnhub");
+
+      return data.map(news => {
+        let pubDateStr = '';
+        if (news.datetime) {
+          pubDateStr = new Date(news.datetime * 1000).toUTCString();
+        } else {
+          pubDateStr = new Date().toUTCString();
+        }
+
+        return {
+          title: news.headline || '',
+          link: news.url || '',
+          pubDate: pubDateStr,
+          description: news.summary || '',
+          author: news.source || 'Finnhub'
+        };
+      });
+    }
+
     async function fetchFeed(feedKey, query = '') {
+      const finnhubKey = localStorage.getItem('finnhub_api_key');
+
+      // 1. Route Finnhub tabs
+      if (finnhubKey && (feedKey === 'general' || feedKey === 'company')) {
+        try {
+          return await fetchFinnhubNews(feedKey, query);
+        } catch (e) {
+          console.error("Finnhub news fetch failed, falling back to RSS feeds...", e);
+          if (feedKey === 'company') {
+            feedKey = 'google_news';
+            query = activeTicker || 'AAPL';
+          } else {
+            feedKey = 'wsj';
+          }
+        }
+      }
+
+      // 2. Resolve RSS feed URLs
       let url = '';
       switch (feedKey) {
         case 'wsj': url = 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml'; break;
@@ -1952,6 +2108,22 @@
           break;
       }
 
+      // 3. Route through Local Proxy if active
+      if (localProxyActive) {
+        try {
+          const proxiedUrl = `http://localhost:3000/proxy?url=${encodeURIComponent(url)}`;
+          const res = await fetch(proxiedUrl);
+          if (!res.ok) throw new Error("Local proxy returned status " + res.status);
+          const xml = await res.text();
+          const parsed = parseXmlFeed(xml);
+          if (!parsed || parsed.length === 0) throw new Error("Empty XML from local proxy");
+          return parsed;
+        } catch (e) {
+          console.warn("Local proxy request failed, falling back to public CORS proxies...", e);
+        }
+      }
+
+      // 4. Fallback to standing CORS proxies
       try {
         const xml = await fetchWithProxy(url);
         const parsed = parseXmlFeed(xml);
@@ -1964,6 +2136,21 @@
           fbQuery += ' when:7d';
 
           const fbUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(fbQuery)}&hl=en-US&gl=US&ceid=US:en`;
+          
+          if (localProxyActive) {
+            try {
+              const proxiedFbUrl = `http://localhost:3000/proxy?url=${encodeURIComponent(fbUrl)}`;
+              const res = await fetch(proxiedFbUrl);
+              if (res.ok) {
+                const xml = await res.text();
+                const parsed = parseXmlFeed(xml);
+                if (parsed && parsed.length > 0) return parsed;
+              }
+            } catch (e) {
+              console.warn("Local proxy fallback failed, using public proxy fallback...", e);
+            }
+          }
+
           const xml = await fetchWithProxy(fbUrl);
           const parsed = parseXmlFeed(xml);
           if (!parsed || parsed.length === 0) throw new Error("Empty fallback XML");
@@ -2342,21 +2529,25 @@
     }
 
     function updateGlobalNewsStats() {
-      // 1. Gather all cached articles from all 5 sources
+      // 1. Gather all cached articles from all active sources
       const allArticles = [
         ...(cachedFeeds.wsj || []),
         ...(cachedFeeds.cnbc || []),
         ...(cachedFeeds.reddit_stocks || []),
         ...(cachedFeeds.reddit_wsb || []),
-        ...(cachedFeeds.google_news || [])
+        ...(cachedFeeds.google_news || []),
+        ...(cachedFeeds.general || []),
+        ...(cachedFeeds.company || [])
       ];
 
-      // 2. Calculate Institutional Sentiment
+      // 2. Calculate Institutional Sentiment (mainstream media + Finnhub general/company feeds)
       let instPos = 0, instNeu = 0, instNeg = 0;
       const instArticles = [
         ...(cachedFeeds.wsj || []),
         ...(cachedFeeds.cnbc || []),
-        ...(cachedFeeds.google_news || [])
+        ...(cachedFeeds.google_news || []),
+        ...(cachedFeeds.general || []),
+        ...(cachedFeeds.company || [])
       ];
       instArticles.forEach(i => {
         if (i.sentiment === 'positive') instPos++;
@@ -3349,13 +3540,19 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
 
       // 3. UI states
       updateAiStatusPill();
+      await detectLocalProxy();
+      updateNewsTabVisibility();
       await refreshWatchlist();
       await refreshPositionsTab(); // Sync positions on startup so portfolio balance immediately reflects live pricing
       loadTicker('AAPL');
       
       // Cache all feeds and generate initial aggregated sentiment & keywords
       await refreshGlobalNewsCache();
-      loadNewsFeed('all');
+      
+      // Load default news feed (general if Finnhub is configured, otherwise all)
+      const defaultFeed = localStorage.getItem('finnhub_api_key') ? 'general' : 'all';
+      loadNewsFeed(defaultFeed);
+      
       loadInPlayList();
       startClock();
 
@@ -3497,6 +3694,7 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
       setBtn.addEventListener('click', () => {
         apiInput.value = localStorage.getItem('gemini_api_key') || '';
         document.getElementById('model-input').value = localStorage.getItem('gemini_model') || 'gemini-3.5-flash';
+        document.getElementById('finnhub-key-input').value = localStorage.getItem('finnhub_api_key') || '';
         modal.style.display = 'flex';
       });
 
@@ -3506,8 +3704,10 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
       saveBtn.addEventListener('click', async () => {
         localStorage.setItem('gemini_api_key', apiInput.value.trim());
         localStorage.setItem('gemini_model', document.getElementById('model-input').value.trim() || 'gemini-3.5-flash');
+        localStorage.setItem('finnhub_api_key', document.getElementById('finnhub-key-input').value.trim());
         updateAiStatusPill();
         hideModal();
+        updateNewsTabVisibility();
         await loadInPlayList();
         await refreshGlobalNewsCache();
       });
