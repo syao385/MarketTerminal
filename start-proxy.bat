@@ -1,10 +1,10 @@
-@echo off
+@echo on
 title Aether Market Terminal Proxy
 echo ===================================================
 echo Starting Aether Market Terminal Local Proxy Server...
 echo ===================================================
 
-where node >nul 2>nul
+where node
 if %errorlevel% neq 0 (
   echo [ERROR] Node.js is not detected on your system.
   echo Please download and install it from: https://nodejs.org/
@@ -15,9 +15,9 @@ if %errorlevel% neq 0 (
 )
 
 if exist "C:\Program Files\nodejs\node.exe" (
-  "C:\Program Files\nodejs\node.exe" proxy-server.js > proxy_stdout.log 2> proxy_stderr.log
+  "C:\Program Files\nodejs\node.exe" proxy-server.js
 ) else (
-  node proxy-server.js > proxy_stdout.log 2> proxy_stderr.log
+  node proxy-server.js
 )
 
 if %errorlevel% neq 0 (
