@@ -79,7 +79,7 @@ const server = http.createServer((req, res) => {
   res.end('Not Found');
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`=================================================`);
   console.log(`Aether Market Terminal Local Proxy Server Active`);
   console.log(`Running at: http://localhost:${PORT}`);
