@@ -1999,6 +1999,20 @@
       const cb = (targetUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
       const finalTarget = targetUrl + cb;
 
+      // 1. Try local proxy first if online
+      if (localProxyActive) {
+        try {
+          const proxiedUrl = `http://localhost:3000/proxy?url=${encodeURIComponent(finalTarget)}`;
+          const res = await fetch(proxiedUrl);
+          if (res.ok) {
+            const text = await res.text();
+            if (text && text.trim().length > 100) return text;
+          }
+        } catch (e) {
+          console.warn("Local proxy fetch failed in fetchWithProxy:", e);
+        }
+      }
+
       const proxies = [
         u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
         u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
@@ -2804,11 +2818,35 @@
     async function fetchVixData() {
       const url = `https://query2.finance.yahoo.com/v7/finance/chart/^VIX?interval=1d&range=1d`;
       try {
-        const json = await fetchYahooFinanceJSON(url);
-        const result = json.chart?.result?.[0];
-        if (!result) throw new Error("Empty VIX data");
-        const price = result.meta.regularMarketPrice;
-        const prevClose = result.meta.chartPreviousClose;
+        let price = null;
+        let prevClose = null;
+        
+        // 0. Try Finnhub directly if key is configured (native CORS support)
+        const finnhubKey = localStorage.getItem('finnhub_api_key');
+        if (finnhubKey && finnhubKey.trim().length > 0) {
+          try {
+            const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=^VIX&token=${finnhubKey}`);
+            if (res.ok) {
+              const qData = await res.json();
+              if (qData.c && qData.c !== 0) {
+                price = qData.c;
+                prevClose = qData.pc;
+              }
+            }
+          } catch (fhErr) {
+            console.warn("Finnhub VIX fetch failed, trying Yahoo Finance...", fhErr);
+          }
+        }
+        
+        // If Finnhub failed or wasn't configured, use helper
+        if (price === null) {
+          const json = await fetchYahooFinanceJSON(url);
+          const result = json.chart?.result?.[0];
+          if (!result) throw new Error("Empty VIX data");
+          price = result.meta.regularMarketPrice;
+          prevClose = result.meta.chartPreviousClose;
+        }
+
         const change = price - prevClose;
         const changePct = (change / prevClose) * 100;
 
@@ -3236,18 +3274,17 @@ You must return a raw JSON block ONLY. Do not wrap in markdown code fences or ba
 
       // 1. Fetch NAAIM Exposure Index (CSV)
       try {
-        const naaimUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://www.naaim.org/wp-content/uploads/2010/01/NAAIM-Trend-Dataset.csv?t=' + Date.now())}`;
-        const resNaaim = await fetch(naaimUrl);
-        if (resNaaim.ok) {
-          const naaimText = await resNaaim.text();
-          const naaimLines = naaimText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-          if (naaimLines.length > 1) {
-            const lastLine = naaimLines[naaimLines.length - 1];
-            const parts = lastLine.split(',');
-            const naaimVal = parseFloat(parts[1]);
-            if (!isNaN(naaimVal)) {
-              naaimEl.textContent = naaimVal.toFixed(1);
-            }
+        const naaimUrl = 'https://www.naaim.org/wp-content/uploads/2010/01/NAAIM-Trend-Dataset.csv';
+        const naaimText = await fetchWithProxy(naaimUrl);
+        const naaimLines = naaimText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        if (naaimLines.length > 1) {
+          const lastLine = naaimLines[naaimLines.length - 1];
+          const parts = lastLine.split(',');
+          const naaimVal = parseFloat(parts[1]);
+          if (!isNaN(naaimVal)) {
+            naaimEl.textContent = naaimVal.toFixed(1);
+          } else {
+            naaimEl.textContent = 'Unavailable';
           }
         } else {
           naaimEl.textContent = 'Unavailable';
@@ -3259,17 +3296,12 @@ You must return a raw JSON block ONLY. Do not wrap in markdown code fences or ba
 
       // 2. Fetch AAII Sentiment Survey (HTML Scraping)
       try {
-        const aaiiUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://www.aaii.com/sentimentsurvey?t=' + Date.now())}`;
-        const resAaii = await fetch(aaiiUrl);
-        if (resAaii.ok) {
-          const aaiiHtml = await resAaii.text();
-          const bullMatch = aaiiHtml.match(/bullish[\s\S]{0,120}?(\d+(?:\.\d+)?)\%/i) || aaiiHtml.match(/bull[\s\S]{0,80}?(\d+(?:\.\d+)?)\%/i);
-          const bearMatch = aaiiHtml.match(/bearish[\s\S]{0,120}?(\d+(?:\.\d+)?)\%/i) || aaiiHtml.match(/bear[\s\S]{0,80}?(\d+(?:\.\d+)?)\%/i);
-          if (bullMatch && bearMatch) {
-            aaiiEl.textContent = `Bull: ${bullMatch[1]}% / Bear: ${bearMatch[1]}%`;
-          } else {
-            aaiiEl.textContent = 'Unavailable';
-          }
+        const aaiiUrl = 'https://www.aaii.com/sentimentsurvey';
+        const aaiiHtml = await fetchWithProxy(aaiiUrl);
+        const bullMatch = aaiiHtml.match(/bullish[\s\S]{0,120}?(\d+(?:\.\d+)?)\%/i) || aaiiHtml.match(/bull[\s\S]{0,80}?(\d+(?:\.\d+)?)\%/i);
+        const bearMatch = aaiiHtml.match(/bearish[\s\S]{0,120}?(\d+(?:\.\d+)?)\%/i) || aaiiHtml.match(/bear[\s\S]{0,80}?(\d+(?:\.\d+)?)\%/i);
+        if (bullMatch && bearMatch) {
+          aaiiEl.textContent = `Bull: ${bullMatch[1]}% / Bear: ${bearMatch[1]}%`;
         } else {
           aaiiEl.textContent = 'Unavailable';
         }
@@ -3280,18 +3312,13 @@ You must return a raw JSON block ONLY. Do not wrap in markdown code fences or ba
 
       // 3. Fetch UMich Consumer Sentiment
       try {
-        const umichUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://data.sca.isr.umich.edu/?t=' + Date.now())}`;
-        const resUmich = await fetch(umichUrl);
-        if (resUmich.ok) {
-          const umichHtml = await resUmich.text();
-          const umichMatch = umichHtml.match(/sentiment\s+index[\s\S]{0,80}?(\d+(?:\.\d+)?)/i) || 
-                             umichHtml.match(/consumer\s+sentiment[\s\S]{0,80}?(\d+(?:\.\d+)?)/i) ||
-                             umichHtml.match(/index\s+of\s+consumer[\s\S]{0,120}?(\d+(?:\.\d+)?)/i);
-          if (umichMatch) {
-            umichEl.textContent = parseFloat(umichMatch[1]).toFixed(1);
-          } else {
-            umichEl.textContent = 'Unavailable';
-          }
+        const umichUrl = 'https://data.sca.isr.umich.edu/';
+        const umichHtml = await fetchWithProxy(umichUrl);
+        const umichMatch = umichHtml.match(/sentiment\s+index[\s\S]{0,80}?(\d+(?:\.\d+)?)/i) || 
+                           umichHtml.match(/consumer\s+sentiment[\s\S]{0,80}?(\d+(?:\.\d+)?)/i) ||
+                           umichHtml.match(/index\s+of\s+consumer[\s\S]{0,120}?(\d+(?:\.\d+)?)/i);
+        if (umichMatch) {
+          umichEl.textContent = parseFloat(umichMatch[1]).toFixed(1);
         } else {
           umichEl.textContent = 'Unavailable';
         }
