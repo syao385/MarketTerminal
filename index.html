@@ -1414,14 +1414,25 @@
         const googleInput = document.getElementById('google-query-input');
         if (googleInput) googleInput.value = activeTicker;
 
-        const activeNewsTab = document.querySelector('#news-feed-tabs .tab-btn.active');
-        if (activeNewsTab) {
-          const feedKey = activeNewsTab.getAttribute('data-feed');
-          if (feedKey === 'google_news') {
-            loadNewsFeed('google_news', activeTicker);
-          } else if (feedKey === 'company') {
-            loadNewsFeed('company');
+        // Auto-switch news tab to symbol-specific news
+        const finnhubKey = localStorage.getItem('finnhub_api_key');
+        if (finnhubKey && finnhubKey.trim().length > 0) {
+          // In Finnhub mode, activate and load "company" news tab
+          const companyTabBtn = document.querySelector('#news-feed-tabs .tab-btn[data-feed="company"]');
+          if (companyTabBtn) {
+            document.querySelectorAll('#news-feed-tabs .tab-btn').forEach(t => t.classList.remove('active'));
+            companyTabBtn.classList.add('active');
           }
+          loadNewsFeed('company');
+        } else {
+          // In standard RSS mode, activate and load "google_news" search tab
+          const googleTabBtn = document.querySelector('#news-feed-tabs .tab-btn[data-feed="google_news"]');
+          if (googleTabBtn) {
+            document.querySelectorAll('#news-feed-tabs .tab-btn').forEach(t => t.classList.remove('active'));
+            googleTabBtn.classList.add('active');
+            document.getElementById('google-search-bar').style.display = 'flex';
+          }
+          loadNewsFeed('google_news', activeTicker);
         }
       } catch (err) {
         console.error(err);
@@ -3540,18 +3551,18 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
 
       // 3. UI states
       updateAiStatusPill();
-      await detectLocalProxy();
-      updateNewsTabVisibility();
-      await refreshWatchlist();
-      await refreshPositionsTab(); // Sync positions on startup so portfolio balance immediately reflects live pricing
+      detectLocalProxy().then(() => {
+        updateNewsTabVisibility();
+      });
+      refreshWatchlist();
+      refreshPositionsTab(); // Sync portfolio on startup
       loadTicker('AAPL');
       
-      // Cache all feeds and generate initial aggregated sentiment & keywords
-      await refreshGlobalNewsCache();
-      
-      // Load default news feed (general if Finnhub is configured, otherwise all)
-      const defaultFeed = localStorage.getItem('finnhub_api_key') ? 'general' : 'all';
-      loadNewsFeed(defaultFeed);
+      // Cache feeds and load default feed asynchronously
+      refreshGlobalNewsCache().then(() => {
+        const defaultFeed = localStorage.getItem('finnhub_api_key') ? 'general' : 'all';
+        loadNewsFeed(defaultFeed);
+      });
       
       loadInPlayList();
       startClock();
@@ -3708,8 +3719,8 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
         updateAiStatusPill();
         hideModal();
         updateNewsTabVisibility();
-        await loadInPlayList();
-        await refreshGlobalNewsCache();
+        loadInPlayList();
+        refreshGlobalNewsCache();
       });
       window.addEventListener('click', (e) => { if (e.target === modal) hideModal(); });
     });
