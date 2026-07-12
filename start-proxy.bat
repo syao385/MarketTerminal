@@ -14,7 +14,12 @@ if %errorlevel% neq 0 (
   exit /b
 )
 
-node proxy-server.js
+if exist "C:\Program Files\nodejs\node.exe" (
+  "C:\Program Files\nodejs\node.exe" proxy-server.js
+) else (
+  node proxy-server.js
+)
+
 if %errorlevel% neq 0 (
   echo.
   echo [WARNING] Proxy server exited with an error (code %errorlevel%).
