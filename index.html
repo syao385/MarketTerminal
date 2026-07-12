@@ -3295,15 +3295,14 @@ You must return a raw JSON block ONLY. Do not wrap in markdown code fences or ba
       const summaryEl = document.getElementById('macro-ai-summary');
       const timestampEl = document.getElementById('macro-board-timestamp');
 
-      // 1. Fetch NAAIM Exposure Index (CSV)
+      // 1. Fetch NAAIM Exposure Index (HTML Scraper)
       try {
-        const naaimUrl = 'https://www.naaim.org/wp-content/uploads/2010/01/NAAIM-Trend-Dataset.csv';
-        const naaimText = await fetchWithProxy(naaimUrl);
-        const naaimLines = naaimText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        if (naaimLines.length > 1) {
-          const lastLine = naaimLines[naaimLines.length - 1];
-          const parts = lastLine.split(',');
-          const naaimVal = parseFloat(parts[1]);
+        const naaimUrl = 'https://naaim.org/programs/naaim-exposure-index/';
+        const naaimHtml = await fetchWithProxy(naaimUrl);
+        // Find the first date and the first number (which is the average exposure index)
+        const naaimMatch = naaimHtml.match(/<td>\d{2}\/\d{2}\/\d{4}<\/td>\s*<td>(-?\d+(?:\.\d+)?)<\/td>/i);
+        if (naaimMatch) {
+          const naaimVal = parseFloat(naaimMatch[1]);
           if (!isNaN(naaimVal)) {
             naaimEl.textContent = naaimVal.toFixed(1);
           } else {
