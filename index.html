@@ -1230,25 +1230,15 @@
         
         return parsed;
       } catch (err) {
-        console.warn(`Yahoo Finance API failed for ${ticker}. Activating client-side simulation fallback.`, err);
-        // Fallback to simulated stock quote and historical data
-        const simulated = SIMULATED_STOCKS[ticker] || {
-          name: ticker + ' Corp.',
-          price: 150.00 + (Math.random() * 50),
-          prevClose: 150.00,
-          low: 148.00,
-          high: 153.00,
-          volume: 10000000
-        };
-        
-        // Seed into global simulated list if not exists
-        if (!SIMULATED_STOCKS[ticker]) {
-          SIMULATED_STOCKS[ticker] = simulated;
+        console.warn(`Yahoo Finance API failed for ${ticker}.`, err);
+        const simulated = SIMULATED_STOCKS[ticker];
+        if (!simulated) {
+          // No fake/demo fallback allowed for unknown assets.
+          throw err;
         }
         
-        const startPrice = simulated.price;
-        const numPoints = range === '1d' ? 78 : 30; // 78 points for 5m intraday, 30 points for 1mo daily
-        const points = generateSimulatedPoints(startPrice, numPoints);
+        const numPoints = range === '1d' ? 78 : 30;
+        const points = generateSimulatedPoints(simulated.price, numPoints);
         
         return {
           meta: {
@@ -2375,7 +2365,10 @@
           attempts++;
           try {
             const bodyObj = {
-              contents: [{ parts: [{ text: prompt }] }]
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: {
+                temperature: 0.1
+              }
             };
             if (useSearch) {
               bodyObj.tools = [{ googleSearch: {} }];
@@ -3662,18 +3655,31 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
       }, 60000);
 
       // 5. Periodic Quote Refresher (Simulates market movements for watchlist & portfolio value)
+      // 5. Periodic Quote Refresher (Updates watchlist & portfolio value using real API quotes every 60 seconds)
       setInterval(async () => {
-        // Only run simulation ticks for stocks in SIMULATED_STOCKS
-        for (const ticker in SIMULATED_STOCKS) {
-          const s = SIMULATED_STOCKS[ticker];
-          const changePercent = (Math.random() - 0.5) * 0.002; // max +/- 0.1% change per tick
-          s.price = Math.round(s.price * (1 + changePercent) * 100) / 100;
-          if (s.price > s.high) s.high = s.price;
-          if (s.price < s.low) s.low = s.price;
-        }
-
         // Refresh watchlist tables & holdings P&L calculations
         await refreshWatchlist();
+        
+        // Refresh active ticker if configured
+        if (activeTicker) {
+          try {
+            const data = await fetchYahooFinanceData(activeTicker);
+            activeTickerQuote = {
+              price: data.meta.regularMarketPrice,
+              prevClose: data.meta.chartPreviousClose,
+              open: data.meta.regularMarketPrice,
+              high: data.meta.regularMarketDayHigh,
+              low: data.meta.regularMarketDayLow,
+              volume: data.meta.regularMarketVolume,
+              longName: data.meta.longName
+            };
+            globalQuotes[activeTicker] = { price: data.meta.regularMarketPrice, prevClose: data.meta.chartPreviousClose };
+            updateActiveTickerUI(data.meta);
+          } catch (e) {
+            console.warn("Periodic active ticker update failed:", e);
+          }
+        }
+
         if (document.getElementById('tab-positions').style.display !== 'none') {
           await refreshPositionsTab();
         } else {
@@ -3696,34 +3702,12 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
 
           document.getElementById('hdr-pfolio-val').textContent = formatCurrency(p.totalValue);
           const pnlEl = document.getElementById('hdr-pfolio-pnl');
-          pnlEl.textContent = formatPercent(p.totalPnLPercent);
-          pnlEl.className = 'stat-chg mono ' + (p.totalPnL >= 0 ? 'up' : 'down');
+          if (pnlEl) {
+            pnlEl.textContent = formatPercent(p.totalPnLPercent);
+            pnlEl.className = 'stat-chg mono ' + (p.totalPnL >= 0 ? 'up' : 'down');
+          }
         }
-
-        // Update active ticker details dynamically if active ticker has simulated price
-        if (activeTicker && SIMULATED_STOCKS[activeTicker]) {
-          const s = SIMULATED_STOCKS[activeTicker];
-          activeTickerQuote = {
-            price: s.price,
-            prevClose: s.prevClose,
-            open: s.price,
-            high: s.high,
-            low: s.low,
-            volume: s.volume,
-            longName: s.name
-          };
-          globalQuotes[activeTicker] = { price: s.price, prevClose: s.prevClose };
-          updateActiveTickerUI({
-            symbol: activeTicker,
-            longName: s.name,
-            regularMarketPrice: s.price,
-            chartPreviousClose: s.prevClose,
-            regularMarketDayHigh: s.high,
-            regularMarketDayLow: s.low,
-            regularMarketVolume: s.volume
-          });
-        }
-      }, 4000);
+      }, 60000);
 
       // 4. Set Tab Listeners
       const tradingTabs = document.querySelectorAll('#trading-tabs .tab-btn');
