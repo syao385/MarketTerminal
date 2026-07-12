@@ -2909,9 +2909,6 @@
           const diff = spyRet - tltRet;
           safeHavenScore = Math.max(0, Math.min(100, ((diff + 5) / 10) * 100));
         }
-      } catch (err) {
-        console.warn("Failed to retrieve indicators for composite calculation. Calculating using available data only.", err);
-      }
 
       const scores = [];
       if (vixScore !== null) scores.push(vixScore);
