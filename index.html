@@ -98,6 +98,8 @@
       animation: pulse 2s infinite;
     }
     .dot-status.closed { background-color: var(--neutral); }
+    .dot-status.warning { background-color: var(--warning); }
+    .dot-status.offline { background-color: var(--error); }
 
     @keyframes pulse {
       0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
@@ -508,6 +510,9 @@
     <div class="hdr-status">
       <span class="dot-status live" id="mkt-status-dot"></span>
       <span id="mkt-status-txt">US MARKETS: LIVE</span>
+      <span style="margin: 0 8px; opacity: 0.3;">|</span>
+      <span class="dot-status offline" id="proxy-status-dot"></span>
+      <span id="proxy-status-txt" style="font-weight: 500;">PROXY: OFFLINE</span>
       <span class="time-lbl" id="time-display">00:00:00 EST</span>
     </div>
     <div class="hdr-pfolio">
@@ -756,6 +761,11 @@
         <div class="card-tabs" id="sentiment-tabs" style="margin-bottom: 8px;">
           <button class="tab-btn active" data-sent-tab="news">NEWS & VOLATILITY</button>
           <button class="tab-btn" data-sent-tab="macro">MACRO FLOW & SURVEYS</button>
+        </div>
+
+        <!-- Connection Notice for Volatility/Sentiment -->
+        <div id="vix-connection-notice" style="display: none; padding: 8px 12px; background: rgba(239, 68, 68, 0.08); border-left: 2px solid var(--error); font-size: 11px; margin-bottom: 8px; border-radius: 2px;">
+          <span style="color: var(--txt-main); font-weight: 500;">⚠️ Volatility & Macro indices require the local proxy to bypass CORS. Run <code style="background:var(--bg-card); padding:2px 4px; border-radius:2px; color:var(--error);">node proxy-server.js</code> in your terminal and refresh.</span>
         </div>
 
         <!-- TAB 1: News & Volatility -->
@@ -2050,6 +2060,10 @@
     }
 
     async function detectLocalProxy() {
+      const dot = document.getElementById('proxy-status-dot');
+      const txt = document.getElementById('proxy-status-txt');
+      const vixNotice = document.getElementById('vix-connection-notice');
+
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 800);
@@ -2062,12 +2076,21 @@
           if (data.status === 'ok') {
             localProxyActive = true;
             console.log("Local proxy detected at http://localhost:3000. Routing feeds through local proxy.");
+            if (dot) dot.className = 'dot-status live';
+            if (txt) txt.textContent = 'PROXY: ONLINE';
+            if (vixNotice) vixNotice.style.display = 'none';
+            return;
           }
         }
       } catch (e) {
-        localProxyActive = false;
-        console.log("Local proxy is offline. Using Finnhub/standing CORS proxies.");
+        console.warn("Local proxy detection failed:", e);
       }
+
+      localProxyActive = false;
+      console.log("Local proxy is offline. Using Finnhub/standing CORS proxies.");
+      if (dot) dot.className = 'dot-status offline';
+      if (txt) txt.textContent = 'PROXY: OFFLINE';
+      if (vixNotice) vixNotice.style.display = 'block';
     }
 
     function updateNewsTabVisibility() {
@@ -3806,6 +3829,7 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
         updateAiStatusPill();
         hideModal();
         updateNewsTabVisibility();
+        detectLocalProxy();
         loadInPlayList();
         refreshGlobalNewsCache();
       });
