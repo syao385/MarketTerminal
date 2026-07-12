@@ -2370,22 +2370,26 @@
 
     function regexParseYahooGainers(html) {
       const gainerList = [];
-      const cleanHtml = html.replace(/\\"/g, '"');
-      const regex = /"ticker":"([A-Z]+)"/g;
+      const regex = /\\*"ticker\\*":\s*\\*"([A-Z]+)\\*"/g;
       let match;
       const seen = new Set();
       
-      while ((match = regex.exec(cleanHtml)) !== null) {
+      while ((match = regex.exec(html)) !== null) {
         const symbol = match[1];
         if (seen.has(symbol)) continue;
         
         const start = Math.max(0, match.index - 300);
-        const end = Math.min(cleanHtml.length, match.index + 1200);
-        const windowText = cleanHtml.substring(start, end);
+        const end = Math.min(html.length, match.index + 1200);
+        const windowText = html.substring(start, end);
         
-        const priceMatch = windowText.match(/"regularMarketPrice":\s*\{\s*"raw":\s*(\d+(?:\.\d+)?)/);
-        const changePercentMatch = windowText.match(/"regularMarketChangePercent":\s*\{\s*"raw":\s*(-?\d+(?:\.\d+)?)/);
-        const volumeMatch = windowText.match(/"regularMarketVolume":\s*\{\s*"raw":\s*(\d+)/);
+        const priceMatch = windowText.match(/\\*"preMarketPrice\\*":\s*\{\s*\\*"raw\\*":\s*(\d+(?:\.\d+)?)/) ||
+                           windowText.match(/\\*"regularMarketPrice\\*":\s*\{\s*\\*"raw\\*":\s*(\d+(?:\.\d+)?)/);
+                           
+        const changePercentMatch = windowText.match(/\\*"preMarketChangePercent\\*":\s*\{\s*\\*"raw\\*":\s*(-?\d+(?:\.\d+)?)/) ||
+                                   windowText.match(/\\*"regularMarketChangePercent\\*":\s*\{\s*\\*"raw\\*":\s*(-?\d+(?:\.\d+)?)/);
+                                   
+        const volumeMatch = windowText.match(/\\*"preMarketVolume\\*":\s*\{\s*\\*"raw\\*":\s*(\d+)/) ||
+                            windowText.match(/\\*"regularMarketVolume\\*":\s*\{\s*\\*"raw\\*":\s*(\d+)/);
         
         if (priceMatch && changePercentMatch) {
           seen.add(symbol);
