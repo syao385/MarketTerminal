@@ -7,10 +7,12 @@ const CACHE_DURATION = 120000; // 2 minutes cache duration
 const cache = {}; // url -> { timestamp, data }
 
 const server = http.createServer((req, res) => {
+  console.log(`Received ${req.method} request for ${req.url}`);
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
 
   if (req.method === 'OPTIONS') {
     res.statusCode = 204;
