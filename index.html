@@ -1576,15 +1576,15 @@
     async function refreshWatchlist() {
       const container = document.getElementById('wl-items-body');
       const wl = getWatchlist();
-      container.innerHTML = '';
 
       if (!wl.length) {
         container.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--txt-sec); padding:20px;">Watchlist is empty.</td></tr>`;
         return;
       }
 
-      // Fetch all quotes first
+      // Fetch all quotes first before clearing container (prevents UI flashing)
       const quotes = await fetchWatchlistPrices(wl);
+      container.innerHTML = '';
 
       // Sort the watchlist array by changePercent
       wl.sort((a, b) => {
