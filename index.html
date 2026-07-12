@@ -1138,6 +1138,51 @@
     async function fetchYahooFinanceData(ticker, range = '1d') {
       const interval = range === '1d' ? '5m' : '1d';
       const url = `https://query2.finance.yahoo.com/v7/finance/chart/${ticker}?interval=${interval}&range=${range}`;
+
+      // 0. Primary fallback: If Finnhub is configured, fetch quote from Finnhub directly (native CORS, 100% reliable)
+      const finnhubKey = localStorage.getItem('finnhub_api_key');
+      if (finnhubKey && finnhubKey.trim().length > 0) {
+        try {
+          const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker.toUpperCase()}&token=${finnhubKey}`);
+          if (res.ok) {
+            const qData = await res.json();
+            if (qData.c && qData.c !== 0) {
+              const mockPoints = generateSimulatedPoints(qData.pc, range === '1d' ? 78 : 30);
+              if (mockPoints.length > 0) {
+                mockPoints[mockPoints.length - 1].value = qData.c;
+              }
+              
+              const parsed = {
+                meta: {
+                  symbol: ticker.toUpperCase(),
+                  regularMarketPrice: qData.c,
+                  chartPreviousClose: qData.pc,
+                  regularMarketDayHigh: qData.h,
+                  regularMarketDayLow: qData.l,
+                  regularMarketVolume: 0,
+                  longName: ticker.toUpperCase() + ' Corp.'
+                },
+                points: mockPoints
+              };
+
+              // Sync local simulator
+              SIMULATED_STOCKS[ticker] = {
+                name: ticker.toUpperCase() + ' Corp.',
+                price: qData.c,
+                prevClose: qData.pc,
+                low: qData.l,
+                high: qData.h,
+                volume: 0
+              };
+
+              return parsed;
+            }
+          }
+        } catch (fhErr) {
+          console.warn("Finnhub quote fetch failed, falling back to Yahoo Finance...", fhErr);
+        }
+      }
+
       try {
         let json = null;
         
