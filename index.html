@@ -1008,6 +1008,7 @@
     
     // News Caching & Analytics State
     let localProxyActive = false;
+    let localProxyUrl = 'http://127.0.0.1:3000';
     let cachedFeeds = {
       wsj: [],
       cnbc: [],
@@ -1167,7 +1168,7 @@
       let json = null;
       if (localProxyActive) {
         try {
-          const proxiedUrl = `http://127.0.0.1:3000/proxy?url=${encodeURIComponent(url)}`;
+          const proxiedUrl = `${localProxyUrl}/proxy?url=${encodeURIComponent(url)}`;
           const res = await fetch(proxiedUrl);
           if (res.ok) {
             json = await res.json();
@@ -2031,7 +2032,7 @@
       // 1. Try local proxy first if online
       if (localProxyActive) {
         try {
-          const proxiedUrl = `http://127.0.0.1:3000/proxy?url=${encodeURIComponent(finalTarget)}`;
+          const proxiedUrl = `${localProxyUrl}/proxy?url=${encodeURIComponent(finalTarget)}`;
           const res = await fetch(proxiedUrl);
           if (res.ok) {
             const text = await res.text();
@@ -2083,26 +2084,31 @@
       const txt = document.getElementById('proxy-status-txt');
       const vixNotice = document.getElementById('vix-connection-notice');
 
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1500);
-        
-        const res = await fetch('http://127.0.0.1:3000/ping', { signal: controller.signal });
-        clearTimeout(timeoutId);
-        
-        if (res.ok) {
-          const data = await res.json();
-          if (data.status === 'ok') {
-            localProxyActive = true;
-            console.log("Local proxy detected at http://127.0.0.1:3000. Routing feeds through local proxy.");
-            if (dot) dot.className = 'dot-status live';
-            if (txt) txt.textContent = 'PROXY: ONLINE';
-            if (vixNotice) vixNotice.style.display = 'none';
-            return;
+      const endpoints = ['http://127.0.0.1:3000/ping', 'http://localhost:3000/ping'];
+      
+      for (const url of endpoints) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 1500);
+          
+          const res = await fetch(url, { signal: controller.signal });
+          clearTimeout(timeoutId);
+          
+          if (res.ok) {
+            const data = await res.json();
+            if (data.status === 'ok') {
+              localProxyActive = true;
+              localProxyUrl = url.replace('/ping', '');
+              console.log(`Local proxy detected at ${localProxyUrl}. Routing feeds through local proxy.`);
+              if (dot) dot.className = 'dot-status live';
+              if (txt) txt.textContent = 'PROXY: ONLINE';
+              if (vixNotice) vixNotice.style.display = 'none';
+              return;
+            }
           }
+        } catch (e) {
+          console.warn(`Local proxy detection failed for ${url}:`, e);
         }
-      } catch (e) {
-        console.warn("Local proxy detection failed:", e);
       }
 
       localProxyActive = false;
@@ -2246,7 +2252,7 @@
       // 3. Route through Local Proxy if active
       if (localProxyActive) {
         try {
-          const proxiedUrl = `http://127.0.0.1:3000/proxy?url=${encodeURIComponent(url)}`;
+          const proxiedUrl = `${localProxyUrl}/proxy?url=${encodeURIComponent(url)}`;
           const res = await fetch(proxiedUrl);
           if (!res.ok) throw new Error("Local proxy returned status " + res.status);
           const xml = await res.text();
@@ -2274,7 +2280,7 @@
           
           if (localProxyActive) {
             try {
-              const proxiedFbUrl = `http://127.0.0.1:3000/proxy?url=${encodeURIComponent(fbUrl)}`;
+              const proxiedFbUrl = `${localProxyUrl}/proxy?url=${encodeURIComponent(fbUrl)}`;
               const res = await fetch(proxiedFbUrl);
               if (res.ok) {
                 const xml = await res.text();

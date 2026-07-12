@@ -13,7 +13,7 @@ const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
-    res.writeHead(204);
+    res.statusCode = 204;
     res.end();
     return;
   }
@@ -22,7 +22,8 @@ const server = http.createServer((req, res) => {
 
   // Ping endpoint for client-side auto-detection
   if (parsedUrl.pathname === '/ping') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ status: 'ok' }));
     return;
   }
@@ -31,7 +32,8 @@ const server = http.createServer((req, res) => {
   if (parsedUrl.pathname === '/proxy') {
     const targetUrl = parsedUrl.query.url;
     if (!targetUrl) {
-      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.statusCode = 400;
+      res.setHeader('Content-Type', 'text/plain');
       res.end('Missing url query parameter.');
       return;
     }
@@ -39,7 +41,8 @@ const server = http.createServer((req, res) => {
     // Check memory cache
     const now = Date.now();
     if (cache[targetUrl] && (now - cache[targetUrl].timestamp < CACHE_DURATION)) {
-      res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8' });
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/xml; charset=utf-8');
       res.end(cache[targetUrl].data);
       return;
     }
@@ -60,22 +63,26 @@ const server = http.createServer((req, res) => {
         if (proxyRes.statusCode === 200) {
           // Cache successful response
           cache[targetUrl] = { timestamp: now, data: body };
-          res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8' });
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/xml; charset=utf-8');
           res.end(body);
         } else {
-          res.writeHead(proxyRes.statusCode, { 'Content-Type': 'text/plain' });
+          res.statusCode = proxyRes.statusCode;
+          res.setHeader('Content-Type', 'text/plain');
           res.end(`Target server returned status: ${proxyRes.statusCode}`);
         }
       });
     }).on('error', (err) => {
       console.error(`Proxy error for ${targetUrl}:`, err);
-      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'text/plain');
       res.end(`Proxy error: ${err.message}`);
     });
     return;
   }
 
-  res.writeHead(404);
+  res.statusCode = 404;
+  res.setHeader('Content-Type', 'text/plain');
   res.end('Not Found');
 });
 
