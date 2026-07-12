@@ -15,9 +15,9 @@ if %errorlevel% neq 0 (
 )
 
 if exist "C:\Program Files\nodejs\node.exe" (
-  "C:\Program Files\nodejs\node.exe" proxy-server.js
+  "C:\Program Files\nodejs\node.exe" proxy-server.js > proxy_stdout.log 2> proxy_stderr.log
 ) else (
-  node proxy-server.js
+  node proxy-server.js > proxy_stdout.log 2> proxy_stderr.log
 )
 
 if %errorlevel% neq 0 (
