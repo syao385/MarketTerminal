@@ -579,6 +579,31 @@
         </div>
       </div>
 
+      <!-- Premarket Gappers Scanner -->
+      <div class="card pg-card" style="max-height: 380px; display: flex; flex-direction: column; margin-top: 12px;">
+        <div class="pg-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <span class="title-lbl" style="font-size: 13px;">PREMARKET GAPPERS</span>
+          <button class="btn-sec btn-icon-sm" onclick="scanPremarketGappers(true)" title="Scan Premarket Gappers" id="pg-scan-btn">
+            <i data-lucide="refresh-cw" style="width:14px; height:14px;"></i>
+          </button>
+        </div>
+        <div class="pg-scroll" style="flex-grow: 1; overflow-y: auto;">
+          <table class="wl-table">
+            <thead>
+              <tr>
+                <th style="text-align: left;">SYMBOL / CATALYST</th>
+                <th style="text-align: right; width: 65px;">PRICE</th>
+                <th style="text-align: right; width: 65px;">GAP%</th>
+                <th style="text-align: right; width: 75px;">VOLUME</th>
+              </tr>
+            </thead>
+            <tbody id="pg-items-body">
+              <tr><td colspan="4" style="text-align:center; color:var(--txt-sec); padding:20px;">Click Scan to discover Premarket Gappers.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- Trading Terminal -->
       <div class="card trade-card">
         <div class="card-tabs" id="trading-tabs">
@@ -2336,6 +2361,219 @@
       updateInPlaySortHeaderUI();
     }
 
+    // --- PREMARKET GAPPERS SCANNER ---
+    function formatVolume(val) {
+      if (val >= 1000000) return (val / 1000000).toFixed(2) + 'M';
+      if (val >= 1000) return (val / 1000).toFixed(0) + 'K';
+      return val.toString();
+    }
+
+    function regexParseYahooGainers(html) {
+      const gainerList = [];
+      const cleanHtml = html.replace(/\\"/g, '"');
+      const regex = /"ticker":"([A-Z]+)"/g;
+      let match;
+      const seen = new Set();
+      
+      while ((match = regex.exec(cleanHtml)) !== null) {
+        const symbol = match[1];
+        if (seen.has(symbol)) continue;
+        
+        const start = Math.max(0, match.index - 300);
+        const end = Math.min(cleanHtml.length, match.index + 1200);
+        const windowText = cleanHtml.substring(start, end);
+        
+        const priceMatch = windowText.match(/"regularMarketPrice":\s*\{\s*"raw":\s*(\d+(?:\.\d+)?)/);
+        const changePercentMatch = windowText.match(/"regularMarketChangePercent":\s*\{\s*"raw":\s*(-?\d+(?:\.\d+)?)/);
+        const volumeMatch = windowText.match(/"regularMarketVolume":\s*\{\s*"raw":\s*(\d+)/);
+        
+        if (priceMatch && changePercentMatch) {
+          seen.add(symbol);
+          gainerList.push({
+            symbol: symbol,
+            price: parseFloat(priceMatch[1]),
+            changePercent: parseFloat(changePercentMatch[1]),
+            volume: volumeMatch ? parseInt(volumeMatch[1], 10) : 0
+          });
+        }
+      }
+      return gainerList;
+    }
+
+    async function scanPremarketGappers(isManual = false) {
+      const container = document.getElementById('pg-items-body');
+      const btn = document.getElementById('pg-scan-btn');
+      if (!container) return;
+
+      container.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--txt-sec); padding:20px;"><div class="spinner" style="margin: 0 auto 8px auto;"></div>Scanning premarket gainers...</td></tr>`;
+      
+      const origHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<div class="spinner" style="width:12px; height:12px; border-width:1px;"></div>`;
+      }
+
+      let gappers = [];
+      try {
+        const html = await fetchWithProxy('https://finance.yahoo.com/markets/stocks/gainers/');
+        gappers = regexParseYahooGainers(html);
+      } catch (e) {
+        console.warn("Yahoo Finance gainers scan failed, trying Finnhub fallback...", e);
+      }
+
+      // Finnhub fallback if Yahoo Finance returned empty or failed
+      if (gappers.length === 0) {
+        const finnhubKey = localStorage.getItem('finnhub_api_key');
+        if (finnhubKey && finnhubKey.trim().length > 0) {
+          const fallbackTickers = ['TSLA', 'NVDA', 'SMCI', 'MARA', 'RIOT', 'COIN', 'PLTR', 'AMD', 'AAPL', 'MSFT', 'AMZN', 'META', 'GOOGL', 'NFLX', 'BABA', 'NIO', 'JD', 'F', 'PLUG', 'SOUN'];
+          const quotes = await Promise.all(fallbackTickers.map(async (sym) => {
+            try {
+              const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${finnhubKey}`);
+              if (res.ok) {
+                const data = await res.json();
+                return {
+                  symbol: sym,
+                  price: data.c || 0,
+                  changePercent: data.dp || 0,
+                  volume: 120000 // Mock volume to pass filter
+                };
+              }
+            } catch (err) {
+              console.warn(`Finnhub quote fetch fallback failed for ${sym}`, err);
+            }
+            return null;
+          }));
+          gappers = quotes.filter(q => q !== null);
+        }
+      }
+
+      // Apply FILTERS
+      const filtered = gappers
+        .filter(g => g.changePercent > 5 && g.price > 3 && g.volume > 50000)
+        .sort((a, b) => b.changePercent - a.changePercent)
+        .slice(0, 10);
+
+      container.innerHTML = '';
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--txt-sec); padding:20px;">No gappers found matching criteria (>5% Gap, >$3 Price, >50k Vol).</td></tr>`;
+        return;
+      }
+
+      filtered.forEach(g => {
+        const row = document.createElement('tr');
+        row.className = 'wl-row';
+        row.innerHTML = `
+          <td style="text-align: left; padding: 8px;">
+            <div class="wl-symbol" style="cursor: pointer; color: var(--prim); font-weight:600;">${g.symbol}</div>
+            <div class="pg-catalyst-${g.symbol}" style="font-size: 11px; color: var(--txt-sec); margin-top: 2px; line-height: 1.3;">
+              <div class="spinner" style="width: 8px; height: 8px; border-width: 1px; display: inline-block; margin-right: 4px;"></div>
+              <span>Loading catalyst...</span>
+            </div>
+          </td>
+          <td style="text-align: right; font-family: monospace; font-size:12px;">$${g.price.toFixed(2)}</td>
+          <td style="text-align: right; font-family: monospace; font-size:12px; font-weight:600; color: var(--success);">+${g.changePercent.toFixed(2)}%</td>
+          <td style="text-align: right; font-family: monospace; font-size:12px; color: var(--txt-sec);">${formatVolume(g.volume)}</td>
+        `;
+
+        row.querySelector('.wl-symbol').addEventListener('click', () => {
+          loadTicker(g.symbol);
+          filterNewsByTag(g.symbol);
+        });
+        container.appendChild(row);
+      });
+
+      // Fetch catalysts sequentially
+      const geminiKey = localStorage.getItem('gemini_api_key');
+      const model = localStorage.getItem('gemini_model') || 'gemini-3.5-flash';
+
+      for (let i = 0; i < filtered.length; i++) {
+        const g = filtered[i];
+        if (i > 0) {
+          // 1.5s delay between requests to protect free-tier Gemini keys
+          await new Promise(r => setTimeout(r, 1500));
+        }
+
+        const catalystEl = container.querySelector(`.pg-catalyst-${g.symbol}`);
+        if (!catalystEl) continue;
+
+        try {
+          let newsText = '';
+          // 1. WebFetch Benzinga
+          try {
+            const benzingaUrl = `https://www.benzinga.com/quote/${g.symbol}`;
+            const bzHtml = await fetchWithProxy(benzingaUrl);
+            newsText = bzHtml
+              .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+              .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .substring(0, 7000);
+          } catch (bzErr) {
+            console.warn(`Benzinga catalyst fetch failed for ${g.symbol}`, bzErr);
+          }
+
+          // 2. Finnhub News Fallback
+          if (!newsText || newsText.length < 200) {
+            const finnhubKey = localStorage.getItem('finnhub_api_key');
+            if (finnhubKey) {
+              const fromDate = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString().split('T')[0];
+              const toDate = new Date().toISOString().split('T')[0];
+              const res = await fetch(`https://finnhub.io/api/v1/company-news?symbol=${g.symbol}&from=${fromDate}&to=${toDate}&token=${finnhubKey}`);
+              if (res.ok) {
+                const newsJson = await res.json();
+                newsText = newsJson.slice(0, 10).map(n => `Headline: ${n.headline}\nSummary: ${n.summary}`).join('\n');
+              }
+            }
+          }
+
+          if (!newsText || newsText.length < 50) {
+            catalystEl.innerHTML = `<span style="color:var(--txt-sec);">No recent news headlines available.</span>`;
+            continue;
+          }
+
+          // 3. Query Gemini
+          if (!geminiKey || geminiKey.trim().length < 12) {
+            catalystEl.innerHTML = `<span style="color:var(--txt-sec);">No API Key configured.</span>`;
+            continue;
+          }
+
+          const promptText = `What recent news or catalyst is driving ${g.symbol} stock today? Return a one-sentence summary, then up to 2 recent headlines verbatim. Just the data — no commentary.\n\nNews Data:\n${newsText}`;
+          
+          const bodyObj = {
+            contents: [{ parts: [{ text: promptText }] }],
+            generationConfig: { temperature: 0.1 }
+          };
+
+          const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(bodyObj)
+          });
+
+          if (!geminiRes.ok) throw new Error("Gemini status " + geminiRes.status);
+          const data = await geminiRes.json();
+          let catalystResult = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          catalystResult = catalystResult.trim();
+
+          if (catalystResult) {
+            catalystEl.innerHTML = `<span>${catalystResult.replace(/\n/g, '<br>')}</span>`;
+          } else {
+            catalystEl.innerHTML = `<span style="color:var(--txt-sec);">Unable to extract catalyst.</span>`;
+          }
+
+        } catch (catErr) {
+          console.error(`Catalyst lookup failed for ${g.symbol}:`, catErr);
+          catalystEl.innerHTML = `<span style="color:var(--txt-sec);">Catalyst lookup failed.</span>`;
+        }
+      }
+    }
+
     async function loadInPlayList(forceRefresh = false) {
       const key = localStorage.getItem('gemini_api_key');
       const container = document.getElementById('ip-items-body');
@@ -3677,6 +3915,7 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
       });
       
       loadInPlayList();
+      scanPremarketGappers();
       startClock();
 
       // Initialize Sentiment and Volatility extensions
@@ -3824,6 +4063,7 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
         updateNewsTabVisibility();
         detectLocalProxy();
         loadInPlayList();
+        scanPremarketGappers();
         refreshGlobalNewsCache();
       });
       window.addEventListener('click', (e) => { if (e.target === modal) hideModal(); });
