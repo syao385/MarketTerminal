@@ -1133,6 +1133,39 @@
       pnlEl.className = 'stat-chg mono ' + (p.totalPnL >= 0 ? 'up' : 'down');
     }
 
+    // Helper to fetch Yahoo Finance JSON data bypassing CORS using proxies
+    async function fetchYahooFinanceJSON(url) {
+      let json = null;
+      if (localProxyActive) {
+        try {
+          const proxiedUrl = `http://localhost:3000/proxy?url=${encodeURIComponent(url)}`;
+          const res = await fetch(proxiedUrl);
+          if (res.ok) {
+            json = await res.json();
+          }
+        } catch (e) {
+          console.warn("Local proxy quote fetch failed, trying direct...", e);
+        }
+      }
+      
+      if (!json) {
+        try {
+          const res = await fetch(url);
+          if (res.ok) {
+            json = await res.json();
+          } else {
+            throw new Error("HTTP " + res.status);
+          }
+        } catch (directErr) {
+          console.warn("Direct quote fetch failed, trying public CORS proxies...", directErr);
+          const text = await fetchWithProxy(url);
+          json = JSON.parse(text);
+        }
+      }
+      if (!json) throw new Error("Could not retrieve JSON data");
+      return json;
+    }
+
     // API Integration: Fetch Yahoo Finance Quote (Direct Fetch)
     async function fetchYahooFinanceData(ticker, range = '1d') {
       const interval = range === '1d' ? '5m' : '1d';
@@ -1183,39 +1216,7 @@
       }
 
       try {
-        let json = null;
-        
-        // 1. Try local proxy first if online
-        if (localProxyActive) {
-          try {
-            const proxiedUrl = `http://localhost:3000/proxy?url=${encodeURIComponent(url)}`;
-            const res = await fetch(proxiedUrl);
-            if (res.ok) {
-              json = await res.json();
-            }
-          } catch (e) {
-            console.warn("Local proxy quote fetch failed, trying direct...", e);
-          }
-        }
-        
-        // 2. Try direct fetch
-        if (!json) {
-          try {
-            const res = await fetch(url);
-            if (res.ok) {
-              json = await res.json();
-            } else {
-              throw new Error("HTTP " + res.status);
-            }
-          } catch (directErr) {
-            console.warn("Direct quote fetch failed, trying public CORS proxies...", directErr);
-            // 3. Fallback to public CORS proxy
-            const text = await fetchWithProxy(url);
-            json = JSON.parse(text);
-          }
-        }
-
-        if (!json) throw new Error("Could not retrieve JSON quote");
+        const json = await fetchYahooFinanceJSON(url);
         const parsed = parseYahooFinanceData(json);
         
         // Sync local simulator cache with real Yahoo Finance quotes so numbers are consistent
@@ -2803,9 +2804,7 @@
     async function fetchVixData() {
       const url = `https://query2.finance.yahoo.com/v7/finance/chart/^VIX?interval=1d&range=1d`;
       try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("VIX fetch failed");
-        const json = await res.json();
+        const json = await fetchYahooFinanceJSON(url);
         const result = json.chart?.result?.[0];
         if (!result) throw new Error("Empty VIX data");
         const price = result.meta.regularMarketPrice;
@@ -2865,26 +2864,29 @@
       let pcrScore = null;
       let safeHavenScore = null;
 
-      try {
-        const spyRes = await fetch(`https://query2.finance.yahoo.com/v7/finance/chart/SPY?interval=1d&range=30d`);
-        const tltRes = await fetch(`https://query2.finance.yahoo.com/v7/finance/chart/TLT?interval=1d&range=30d`);
-        const pccRes = await fetch(`https://query2.finance.yahoo.com/v7/finance/chart/^PCC?interval=1d&range=1d`);
+      let spyClose = [];
+      let tltClose = [];
+      let pccPrice = null;
 
-        let spyClose = [];
-        let tltClose = [];
-        let pccPrice = null;
-
-        if (spyRes.ok) {
-          const spyJson = await spyRes.json();
+        try {
+          const spyJson = await fetchYahooFinanceJSON(`https://query2.finance.yahoo.com/v7/finance/chart/SPY?interval=1d&range=30d`);
           spyClose = spyJson.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
+        } catch (e) {
+          console.warn("Failed SPY composite fetch:", e);
         }
-        if (tltRes.ok) {
-          const tltJson = await tltRes.json();
+
+        try {
+          const tltJson = await fetchYahooFinanceJSON(`https://query2.finance.yahoo.com/v7/finance/chart/TLT?interval=1d&range=30d`);
           tltClose = tltJson.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
+        } catch (e) {
+          console.warn("Failed TLT composite fetch:", e);
         }
-        if (pccRes.ok) {
-          const pccJson = await pccRes.json();
+
+        try {
+          const pccJson = await fetchYahooFinanceJSON(`https://query2.finance.yahoo.com/v7/finance/chart/^PCC?interval=1d&range=1d`);
           pccPrice = pccJson.chart?.result?.[0]?.meta?.regularMarketPrice;
+        } catch (e) {
+          console.warn("Failed PCC composite fetch:", e);
         }
 
         spyClose = spyClose.filter(x => x !== null && x !== undefined);
@@ -2970,9 +2972,7 @@
     async function fetchAndCalculateSMI() {
       const url = `https://query2.finance.yahoo.com/v7/finance/chart/SPY?interval=5m&range=5d`;
       try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("SMI chart fetch failed");
-        const json = await res.json();
+        const json = await fetchYahooFinanceJSON(url);
         const result = json.chart?.result?.[0];
         if (!result) throw new Error("Empty SMI chart result");
         
