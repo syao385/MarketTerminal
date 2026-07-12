@@ -1614,7 +1614,10 @@
             </button>
           </td>
         `;
-        row.addEventListener('click', () => loadTicker(symbol));
+        row.addEventListener('click', () => {
+          loadTicker(symbol);
+          filterNewsByTag(symbol);
+        });
         container.appendChild(row);
       });
 
@@ -2301,7 +2304,10 @@
           </td>
           <td style="text-align: right;">${chgHtml}</td>
         `;
-        row.addEventListener('click', () => loadTicker(item.symbol));
+        row.addEventListener('click', () => {
+          loadTicker(item.symbol);
+          filterNewsByTag(item.symbol);
+        });
         container.appendChild(row);
       });
 
