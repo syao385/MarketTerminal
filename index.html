@@ -242,18 +242,12 @@
     /* Tabs */
     .card-tabs {
       display: flex;
+      flex-wrap: wrap; /* Wrap tabs to prevent horizontal overflow hiding last elements */
       border-bottom: 1px solid var(--border);
       margin-bottom: 12px;
-      gap: 8px;
-      overflow-x: auto;
-      overflow-y: hidden;
-      -ms-overflow-style: none;  /* Hide scrollbars for IE/Edge */
-      scrollbar-width: none;  /* Hide scrollbars for Firefox */
+      gap: 4px 8px;
       flex-shrink: 0; /* Prevent vertical flex shrinking */
       padding-bottom: 4px; /* Give room for indicators */
-    }
-    .card-tabs::-webkit-scrollbar {
-      display: none; /* Hide scrollbars for Chrome/Safari */
     }
     .tab-btn {
       background: none;
