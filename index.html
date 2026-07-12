@@ -1139,9 +1139,39 @@
       const interval = range === '1d' ? '5m' : '1d';
       const url = `https://query2.finance.yahoo.com/v7/finance/chart/${ticker}?interval=${interval}&range=${range}`;
       try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("HTTP error " + res.status);
-        const json = await res.json();
+        let json = null;
+        
+        // 1. Try local proxy first if online
+        if (localProxyActive) {
+          try {
+            const proxiedUrl = `http://localhost:3000/proxy?url=${encodeURIComponent(url)}`;
+            const res = await fetch(proxiedUrl);
+            if (res.ok) {
+              json = await res.json();
+            }
+          } catch (e) {
+            console.warn("Local proxy quote fetch failed, trying direct...", e);
+          }
+        }
+        
+        // 2. Try direct fetch
+        if (!json) {
+          try {
+            const res = await fetch(url);
+            if (res.ok) {
+              json = await res.json();
+            } else {
+              throw new Error("HTTP " + res.status);
+            }
+          } catch (directErr) {
+            console.warn("Direct quote fetch failed, trying public CORS proxies...", directErr);
+            // 3. Fallback to public CORS proxy
+            const text = await fetchWithProxy(url);
+            json = JSON.parse(text);
+          }
+        }
+
+        if (!json) throw new Error("Could not retrieve JSON quote");
         const parsed = parseYahooFinanceData(json);
         
         // Sync local simulator cache with real Yahoo Finance quotes so numbers are consistent
