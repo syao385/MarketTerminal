@@ -570,12 +570,11 @@
             <thead>
               <tr>
                 <th style="text-align: left;">SYMBOL / CATALYST</th>
-                <th style="text-align: right;">PRICE</th>
                 <th style="text-align: right; cursor: pointer; user-select: none;" id="ip-sort-chg-header" onclick="toggleInPlaySort()">CHG%<span id="ip-sort-arrow"> ↓</span></th>
               </tr>
             </thead>
             <tbody id="ip-items-body">
-              <tr><td colspan="3" style="text-align:center; color:var(--txt-sec); padding:20px;">Enter Gemini API Key in Settings to load In-Play list.</td></tr>
+              <tr><td colspan="2" style="text-align:center; color:var(--txt-sec); padding:20px;">Enter Gemini API Key in Settings to load In-Play list.</td></tr>
             </tbody>
           </table>
         </div>
@@ -2300,7 +2299,6 @@
             <div style="font-weight: 600;">${item.symbol}</div>
             <div style="font-size: 10px; color: var(--txt-sec); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${item.catalyst}">${item.catalyst}</div>
           </td>
-          <td style="text-align: right;" class="mono">${priceText}</td>
           <td style="text-align: right;">${chgHtml}</td>
         `;
         row.addEventListener('click', () => loadTicker(item.symbol));
@@ -2316,7 +2314,7 @@
       if (!container) return;
       
       if (!key || key.trim().length < 12) {
-        container.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--txt-sec); padding:20px;">Enter Gemini API Key in Settings to load In-Play list.</td></tr>`;
+        container.innerHTML = `<tr><td colspan="2" style="text-align:center; color:var(--txt-sec); padding:20px;">Enter Gemini API Key in Settings to load In-Play list.</td></tr>`;
         return;
       }
 
@@ -2356,7 +2354,7 @@
         }
       }
 
-      container.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--txt-sec); padding:20px;"><div class="spinner" style="margin: 0 auto 8px auto;"></div>Loading in-play stocks from Gemini...</td></tr>`;
+      container.innerHTML = `<tr><td colspan="2" style="text-align:center; color:var(--txt-sec); padding:20px;"><div class="spinner" style="margin: 0 auto 8px auto;"></div>Loading in-play stocks from Gemini...</td></tr>`;
 
       const model = localStorage.getItem('gemini_model') || 'gemini-3.5-flash';
       const prompt = "Identify the top 10 stocks currently in play in the US stock market today. Return only a valid JSON array of objects, where each object has a 'symbol' (uppercase stock ticker) and a 'catalyst' (a short sentence explanation of why it is in play, maximum 8 words). Do not include any markdown code blocks, backticks, or other conversational text. Example: [{\"symbol\": \"AAPL\", \"catalyst\": \"iPhone sales surge\"}]";
