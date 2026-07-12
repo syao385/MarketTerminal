@@ -2362,12 +2362,6 @@
     }
 
     // --- PREMARKET GAPPERS SCANNER ---
-    function formatVolume(val) {
-      if (val >= 1000000) return (val / 1000000).toFixed(2) + 'M';
-      if (val >= 1000) return (val / 1000).toFixed(0) + 'K';
-      return val.toString();
-    }
-
     function regexParseYahooGainers(html) {
       const gainerList = [];
       const regex = /\\*"ticker\\*":\s*\\*"([A-Z]+)\\*"/g;
