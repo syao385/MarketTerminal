@@ -17,11 +17,11 @@ exit /b
 :node_ok
 if exist "C:\Program Files\nodejs\node.exe" goto use_absolute
 
-node proxy-server.js
+node --max-http-header-size=80000 proxy-server.js
 goto check_error
 
 :use_absolute
-"C:\Program Files\nodejs\node.exe" proxy-server.js
+"C:\Program Files\nodejs\node.exe" --max-http-header-size=80000 proxy-server.js
 
 :check_error
 if %errorlevel% equ 0 goto end
