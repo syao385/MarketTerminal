@@ -579,31 +579,6 @@
         </div>
       </div>
 
-      <!-- Premarket Gappers Scanner -->
-      <div class="card pg-card" style="max-height: 380px; display: flex; flex-direction: column; margin-top: 12px;">
-        <div class="pg-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <span class="title-lbl" style="font-size: 13px;">PREMARKET GAPPERS</span>
-          <button class="btn-sec btn-icon-sm" onclick="scanPremarketGappers(true)" title="Scan Premarket Gappers" id="pg-scan-btn">
-            <i data-lucide="refresh-cw" style="width:14px; height:14px;"></i>
-          </button>
-        </div>
-        <div class="pg-scroll" style="flex-grow: 1; overflow-y: auto;">
-          <table class="wl-table">
-            <thead>
-              <tr>
-                <th style="text-align: left;">SYMBOL / CATALYST</th>
-                <th style="text-align: right; width: 65px;">PRICE</th>
-                <th style="text-align: right; width: 65px;">GAP%</th>
-                <th style="text-align: right; width: 75px;">VOLUME</th>
-              </tr>
-            </thead>
-            <tbody id="pg-items-body">
-              <tr><td colspan="4" style="text-align:center; color:var(--txt-sec); padding:20px;">Click Scan to discover Premarket Gappers.</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
       <!-- Trading Terminal -->
       <div class="card trade-card">
         <div class="card-tabs" id="trading-tabs">
@@ -734,6 +709,31 @@
           <div class="ai-output">
             <div id="ai-output-text" class="ai-txt">Click "Deep Dive Analysis" to run a live stock evaluation based on news and ticker trends.</div>
           </div>
+        </div>
+      </div>
+
+      <!-- Premarket Gappers Scanner -->
+      <div class="card pg-card" style="max-height: 380px; display: flex; flex-direction: column; margin-top: 16px;">
+        <div class="pg-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <span class="title-lbl" style="font-size: 13px;">PREMARKET GAPPERS</span>
+          <button class="btn-sec btn-icon-sm" onclick="scanPremarketGappers(true)" title="Scan Premarket Gappers" id="pg-scan-btn">
+            <i data-lucide="refresh-cw" style="width:14px; height:14px;"></i>
+          </button>
+        </div>
+        <div class="pg-scroll" style="flex-grow: 1; overflow-y: auto;">
+          <table class="wl-table" style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr>
+                <th style="text-align: left; padding: 8px;">SYMBOL / CATALYST</th>
+                <th style="text-align: right; width: 80px; padding: 8px;">PRICE</th>
+                <th style="text-align: right; width: 80px; padding: 8px;">GAP%</th>
+                <th style="text-align: right; width: 100px; padding: 8px;">VOLUME</th>
+              </tr>
+            </thead>
+            <tbody id="pg-items-body">
+              <tr><td colspan="4" style="text-align:center; color:var(--txt-sec); padding:20px;">Click Scan to discover Premarket Gappers.</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
