@@ -1167,7 +1167,7 @@
       let json = null;
       if (localProxyActive) {
         try {
-          const proxiedUrl = `http://localhost:3000/proxy?url=${encodeURIComponent(url)}`;
+          const proxiedUrl = `http://127.0.0.1:3000/proxy?url=${encodeURIComponent(url)}`;
           const res = await fetch(proxiedUrl);
           if (res.ok) {
             json = await res.json();
@@ -2031,7 +2031,7 @@
       // 1. Try local proxy first if online
       if (localProxyActive) {
         try {
-          const proxiedUrl = `http://localhost:3000/proxy?url=${encodeURIComponent(finalTarget)}`;
+          const proxiedUrl = `http://127.0.0.1:3000/proxy?url=${encodeURIComponent(finalTarget)}`;
           const res = await fetch(proxiedUrl);
           if (res.ok) {
             const text = await res.text();
@@ -2085,16 +2085,16 @@
 
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 800);
+        const timeoutId = setTimeout(() => controller.abort(), 1500);
         
-        const res = await fetch('http://localhost:3000/ping', { signal: controller.signal });
+        const res = await fetch('http://127.0.0.1:3000/ping', { signal: controller.signal });
         clearTimeout(timeoutId);
         
         if (res.ok) {
           const data = await res.json();
           if (data.status === 'ok') {
             localProxyActive = true;
-            console.log("Local proxy detected at http://localhost:3000. Routing feeds through local proxy.");
+            console.log("Local proxy detected at http://127.0.0.1:3000. Routing feeds through local proxy.");
             if (dot) dot.className = 'dot-status live';
             if (txt) txt.textContent = 'PROXY: ONLINE';
             if (vixNotice) vixNotice.style.display = 'none';
@@ -2246,7 +2246,7 @@
       // 3. Route through Local Proxy if active
       if (localProxyActive) {
         try {
-          const proxiedUrl = `http://localhost:3000/proxy?url=${encodeURIComponent(url)}`;
+          const proxiedUrl = `http://127.0.0.1:3000/proxy?url=${encodeURIComponent(url)}`;
           const res = await fetch(proxiedUrl);
           if (!res.ok) throw new Error("Local proxy returned status " + res.status);
           const xml = await res.text();
@@ -2274,7 +2274,7 @@
           
           if (localProxyActive) {
             try {
-              const proxiedFbUrl = `http://localhost:3000/proxy?url=${encodeURIComponent(fbUrl)}`;
+              const proxiedFbUrl = `http://127.0.0.1:3000/proxy?url=${encodeURIComponent(fbUrl)}`;
               const res = await fetch(proxiedFbUrl);
               if (res.ok) {
                 const xml = await res.text();
