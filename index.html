@@ -590,7 +590,7 @@
         <!-- Trade Panel -->
         <div class="tab-content" id="tab-trade" style="display: block;">
           <div class="trade-info">
-            <span class="trade-badge" id="trade-ticker-badge">AAPL</span>
+            <span class="trade-badge" id="trade-ticker-badge">QQQ</span>
             <span class="trade-price mono" id="trade-ticker-price">$0.00</span>
           </div>
           <div class="trade-toggle">
@@ -634,8 +634,8 @@
       <div class="card ticker-card">
         <div class="ticker-top">
           <div>
-            <div id="ticker-symbol" class="ticker-symbol">AAPL</div>
-            <div id="ticker-name" class="ticker-name">Apple Inc.</div>
+            <div id="ticker-symbol" class="ticker-symbol">QQQ</div>
+            <div id="ticker-name" class="ticker-name">Invesco QQQ Trust</div>
           </div>
           <div style="text-align: right;">
             <div id="ticker-price" class="ticker-price mono">$0.00</div>
@@ -996,7 +996,7 @@
 
   <script>
     // Constants & Global State
-    let activeTicker = 'AAPL';
+    let activeTicker = 'QQQ';
     let activeTickerQuote = null;
     let activeTickerPoints = [];
     let globalQuotes = {};
@@ -2493,83 +2493,152 @@
 
       for (let i = 0; i < filtered.length; i++) {
         const g = filtered[i];
-        if (i > 0) {
-          // 1.5s delay between requests to protect free-tier Gemini keys
-          await new Promise(r => setTimeout(r, 1500));
-        }
-
         const catalystEl = container.querySelector(`.pg-catalyst-${g.symbol}`);
         if (!catalystEl) continue;
 
         try {
           let newsText = '';
-          // 1. WebFetch Benzinga
-          try {
-            const benzingaUrl = `https://www.benzinga.com/quote/${g.symbol}`;
-            const bzHtml = await fetchWithProxy(benzingaUrl);
-            newsText = bzHtml
-              .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-              .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-              .replace(/<[^>]+>/g, ' ')
-              .replace(/\s+/g, ' ')
-              .trim()
-              .substring(0, 7000);
-          } catch (bzErr) {
-            console.warn(`Benzinga catalyst fetch failed for ${g.symbol}`, bzErr);
-          }
+          let directHeadline = '';
 
-          // 2. Finnhub News Fallback
-          if (!newsText || newsText.length < 200) {
-            const finnhubKey = localStorage.getItem('finnhub_api_key');
-            if (finnhubKey) {
+          // 1. Try Finnhub News directly if key is configured
+          const finnhubKey = localStorage.getItem('finnhub_api_key');
+          if (finnhubKey && finnhubKey.trim().length > 0) {
+            try {
               const fromDate = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString().split('T')[0];
               const toDate = new Date().toISOString().split('T')[0];
               const res = await fetch(`https://finnhub.io/api/v1/company-news?symbol=${g.symbol}&from=${fromDate}&to=${toDate}&token=${finnhubKey}`);
               if (res.ok) {
                 const newsJson = await res.json();
-                newsText = newsJson.slice(0, 10).map(n => `Headline: ${n.headline}\nSummary: ${n.summary}`).join('\n');
+                if (Array.isArray(newsJson) && newsJson.length > 0) {
+                  // Compile news text for Gemini fallback just in case
+                  newsText = newsJson.slice(0, 10).map(n => `Headline: ${n.headline}\nSummary: ${n.summary}`).join('\n');
+
+                  // Find if there is a recent headline (< 24 hours old)
+                  const sorted = [...newsJson].sort((a, b) => (b.datetime || 0) - (a.datetime || 0));
+                  const newest = sorted[0];
+                  const nowSec = Date.now() / 1000;
+                  if (newest.datetime && (nowSec - newest.datetime) < 24 * 3600) {
+                    directHeadline = newest.headline;
+                  }
+                }
+              }
+            } catch (fhErr) {
+              console.warn(`Direct Finnhub catalyst fetch failed for ${g.symbol}`, fhErr);
+            }
+          }
+
+          // 2. Try Yahoo News (RSS) if we don't have a direct headline yet
+          if (!directHeadline) {
+            try {
+              const yahooUrl = `https://finance.yahoo.com/rss/headline?s=${g.symbol}`;
+              const xml = await fetchWithProxy(yahooUrl);
+              const parsed = parseXmlFeed(xml);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                // If newsText is empty, compile it for Gemini fallback
+                if (!newsText) {
+                  newsText = parsed.slice(0, 10).map(item => `Headline: ${item.title}\nSummary: ${item.description || ''}`).join('\n');
+                }
+
+                // Sort by date to get the newest
+                const sorted = [...parsed].sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+                const newest = sorted[0];
+                const pubTime = new Date(newest.pubDate).getTime();
+                const nowTime = Date.now();
+                if (!isNaN(pubTime) && (nowTime - pubTime) < 24 * 3600 * 1000) {
+                  directHeadline = newest.title;
+                }
+              }
+            } catch (yErr) {
+              console.warn(`Direct Yahoo News catalyst fetch failed for ${g.symbol}`, yErr);
+            }
+          }
+
+          // 3. Try Benzinga Scraper if we don't have a direct headline yet
+          if (!directHeadline) {
+            try {
+              const benzingaUrl = `https://www.benzinga.com/quote/${g.symbol}`;
+              const bzHtml = await fetchWithProxy(benzingaUrl);
+
+              const strippedText = bzHtml
+                .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .substring(0, 7000);
+
+              if (!newsText) {
+                newsText = strippedText;
+              }
+
+              // Extract a potential headline from HTML using DOMParser
+              const parser = new DOMParser();
+              const doc = parser.parseFromString(bzHtml, 'text/html');
+
+              const candidates = [];
+              doc.querySelectorAll('a').forEach(a => {
+                const href = a.getAttribute('href') || '';
+                const text = a.textContent.trim();
+                if ((href.includes('/news/') || href.includes('/content/')) && text.length > 25 && text.length < 150) {
+                  candidates.push(text);
+                }
+              });
+              doc.querySelectorAll('h3, h4').forEach(h => {
+                const text = h.textContent.trim();
+                if (text.length > 25 && text.length < 150) {
+                  candidates.push(text);
+                }
+              });
+
+              if (candidates.length > 0) {
+                directHeadline = candidates[0];
+              }
+            } catch (bzErr) {
+              console.warn(`Direct Benzinga catalyst fetch failed for ${g.symbol}`, bzErr);
+            }
+          }
+
+          // 4. Render if we got a direct headline
+          if (directHeadline) {
+            catalystEl.innerHTML = `<span>${directHeadline}</span>`;
+            continue; // Success! Skip Gemini entirely.
+          }
+
+          // 5. If we have news text but no direct recent headline, fallback to Gemini
+          if (newsText && newsText.length > 50 && geminiKey && geminiKey.trim().length >= 12) {
+            // Apply a 1.5s rate-limiting delay since we are hitting Gemini
+            await new Promise(r => setTimeout(r, 1500));
+
+            const promptText = `What recent news or catalyst is driving ${g.symbol} stock today? Return a one-sentence summary. Just the data — no commentary.\n\nNews Data:\n${newsText}`;
+
+            const bodyObj = {
+              contents: [{ parts: [{ text: promptText }] }],
+              generationConfig: { temperature: 0.1 }
+            };
+
+            const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(bodyObj)
+            });
+
+            if (geminiRes.ok) {
+              const data = await geminiRes.json();
+              let catalystResult = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+              catalystResult = catalystResult.trim();
+              if (catalystResult) {
+                catalystEl.innerHTML = `<span>${catalystResult}</span>`;
+                continue;
               }
             }
           }
 
-          if (!newsText || newsText.length < 50) {
-            catalystEl.innerHTML = `<span style="color:var(--txt-sec);">No recent news headlines available.</span>`;
-            continue;
-          }
-
-          // 3. Query Gemini
-          if (!geminiKey || geminiKey.trim().length < 12) {
-            catalystEl.innerHTML = `<span style="color:var(--txt-sec);">No API Key configured.</span>`;
-            continue;
-          }
-
-          const promptText = `What recent news or catalyst is driving ${g.symbol} stock today? Return a one-sentence summary, then up to 2 recent headlines verbatim. Just the data — no commentary.\n\nNews Data:\n${newsText}`;
-          
-          const bodyObj = {
-            contents: [{ parts: [{ text: promptText }] }],
-            generationConfig: { temperature: 0.1 }
-          };
-
-          const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(bodyObj)
-          });
-
-          if (!geminiRes.ok) throw new Error("Gemini status " + geminiRes.status);
-          const data = await geminiRes.json();
-          let catalystResult = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          catalystResult = catalystResult.trim();
-
-          if (catalystResult) {
-            catalystEl.innerHTML = `<span>${catalystResult.replace(/\n/g, '<br>')}</span>`;
-          } else {
-            catalystEl.innerHTML = `<span style="color:var(--txt-sec);">Unable to extract catalyst.</span>`;
-          }
+          // 6. Final Catch-all if everything failed or was empty
+          catalystEl.innerHTML = `<span style="color:var(--txt-sec);">No catalyst.</span>`;
 
         } catch (catErr) {
           console.error(`Catalyst lookup failed for ${g.symbol}:`, catErr);
-          catalystEl.innerHTML = `<span style="color:var(--txt-sec);">Catalyst lookup failed.</span>`;
+          catalystEl.innerHTML = `<span style="color:var(--txt-sec);">No catalyst.</span>`;
         }
       }
     }
@@ -3383,6 +3452,88 @@
       }
     }
 
+    async function calculateWeeklyETFVolumeFlows() {
+      const tickers = { equity: 'SPY', bond: 'TLT', cash: 'BIL' };
+      const results = {};
+      
+      await Promise.all(Object.entries(tickers).map(async ([key, ticker]) => {
+        try {
+          const chartUrl = `https://query2.finance.yahoo.com/v7/finance/chart/${ticker}?interval=1d&range=30d`;
+          const json = await fetchYahooFinanceJSON(chartUrl);
+          
+          const result = json.chart?.result?.[0];
+          const quotes = result?.indicators?.quote?.[0];
+          const close = quotes?.close || [];
+          const volume = quotes?.volume || [];
+          
+          const validClose = close.filter(c => c !== null && c !== undefined);
+          const validVol = volume.filter(v => v !== null && v !== undefined);
+          
+          if (validClose.length < 15 || validVol.length < 15) {
+            results[key] = { zScore: 0, signal: 'N/A' };
+            return;
+          }
+          
+          // Calculate daily flow proxies: vol * price * change%
+          const dailyFlows = [];
+          for (let i = 1; i < validClose.length; i++) {
+            const priceChangePercent = (validClose[i] - validClose[i-1]) / validClose[i-1];
+            const flow = validVol[i] * validClose[i] * priceChangePercent;
+            dailyFlows.push(flow);
+          }
+          
+          // Calculate rolling weekly flows (sum of 5 consecutive daily flows)
+          const weeklyFlows = [];
+          for (let i = 0; i <= dailyFlows.length - 5; i++) {
+            const weekSum = dailyFlows.slice(i, i + 5).reduce((sum, f) => sum + f, 0);
+            weeklyFlows.push(weekSum);
+          }
+          
+          if (weeklyFlows.length < 2) {
+            results[key] = { zScore: 0, signal: 'N/A' };
+            return;
+          }
+          
+          const currentWeekFlow = weeklyFlows[weeklyFlows.length - 1];
+          const prevWeekFlow = weeklyFlows[weeklyFlows.length - 2];
+          
+          // Calculate mean and standard deviation of weekly flows for Z-score
+          const mean = weeklyFlows.reduce((sum, f) => sum + f, 0) / weeklyFlows.length;
+          const variance = weeklyFlows.reduce((sum, f) => sum + Math.pow(f - mean, 2), 0) / weeklyFlows.length;
+          const stdDev = Math.sqrt(variance) || 1;
+          const zScore = (currentWeekFlow - mean) / stdDev;
+          
+          // Detect momentum and turning points
+          let signal = "Steady";
+          if (currentWeekFlow > 0 && prevWeekFlow <= 0) {
+            signal = "Bullish Reversal";
+          } else if (currentWeekFlow < 0 && prevWeekFlow >= 0) {
+            signal = "Bearish Reversal";
+          } else if (currentWeekFlow > 0 && prevWeekFlow > 0) {
+            signal = currentWeekFlow > prevWeekFlow ? "Inflow Accel" : "Inflow Decel";
+          } else if (currentWeekFlow < 0 && prevWeekFlow < 0) {
+            signal = Math.abs(currentWeekFlow) > Math.abs(prevWeekFlow) ? "Outflow Accel" : "Outflow Decel";
+          }
+          
+          results[key] = {
+            zScore: zScore,
+            signal: signal
+          };
+        } catch (err) {
+          console.warn(`Failed to calculate ETF flow proxy for ${ticker}:`, err);
+          results[key] = { zScore: 0, signal: 'Err' };
+        }
+      }));
+      
+      const formatVal = (res) => {
+        if (!res || res.signal === 'N/A' || res.signal === 'Err') return '--';
+        const sign = res.zScore >= 0 ? '+' : '';
+        return `Z: ${sign}${res.zScore.toFixed(2)} (${res.signal})`;
+      };
+      
+      return `Eq: ${formatVal(results.equity)} | Bd: ${formatVal(results.bond)} | Cash: ${formatVal(results.cash)}`;
+    }
+
     async function fetchMacroFlows() {
       const btn = document.getElementById('refresh-macro-btn');
       const origHtml = btn.innerHTML;
@@ -3486,7 +3637,15 @@ You must return a raw JSON block ONLY. Do not wrap in markdown code fences or ba
         aaiiEl.textContent = `Bull: ${parsed.aaii.bullish} / Bear: ${parsed.aaii.bearish}`;
         naaimEl.textContent = parsed.naaim;
         umichEl.textContent = parsed.umich;
-        flowsEl.textContent = `Eq: ${parsed.flows.equity} | Bd: ${parsed.flows.bond} | Cash: ${parsed.flows.money_market}`;
+        
+        // Calculate our custom quantitative ETF flow proxy for reliability and actionability
+        try {
+          flowsEl.textContent = await calculateWeeklyETFVolumeFlows();
+        } catch (flowErr) {
+          console.warn("Weekly ETF flows calculation failed, falling back to Gemini parsed flow:", flowErr);
+          flowsEl.textContent = `Eq: ${parsed.flows.equity} | Bd: ${parsed.flows.bond} | Cash: ${parsed.flows.money_market}`;
+        }
+        
         summaryEl.textContent = parsed.summary;
 
         const dateStr = new Date().toLocaleDateString([], { month: 'short', day: 'numeric' });
@@ -3581,10 +3740,15 @@ You must return a raw JSON block ONLY. Do not wrap in markdown code fences or ba
         umichEl.textContent = 'Unavailable';
       }
 
-      // Fund Flows - set to Unavailable
-      flowsEl.textContent = 'Unavailable';
+      // 4. Calculate Weekly Fund Flows using ETF flow proxies (SPY, TLT, BIL)
+      try {
+        flowsEl.textContent = await calculateWeeklyETFVolumeFlows();
+      } catch (flowErr) {
+        console.warn("Direct Weekly Fund Flows proxy calculation failed:", flowErr);
+        flowsEl.textContent = 'Unavailable';
+      }
 
-      summaryEl.innerHTML = `<span style="color:var(--success); font-weight:600;">Direct Source Synced</span>\nSuccessfully fetched real-time AAII and NAAIM survey data directly from their official servers (bypassing Gemini search rate limits).`;
+      summaryEl.innerHTML = `<span style="color:var(--success); font-weight:600;">Direct Source Synced</span>\nSuccessfully fetched real-time AAII, NAAIM, and ETF fund flows directly from their official servers (bypassing Gemini search rate limits).`;
       
       const dateStr = new Date().toLocaleDateString([], { month: 'short', day: 'numeric' });
       const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -3906,7 +4070,7 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
       });
       refreshWatchlist();
       refreshPositionsTab(); // Sync portfolio on startup
-      loadTicker('AAPL');
+      loadTicker('QQQ');
       
       // Cache feeds and load default feed asynchronously
       refreshGlobalNewsCache().then(() => {
