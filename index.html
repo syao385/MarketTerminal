@@ -2364,42 +2364,6 @@
     }
 
     // --- PREMARKET GAPPERS SCANNER ---
-    function regexParseYahooGainers(html) {
-      const gainerList = [];
-      const regex = /\\*"ticker\\*":\s*\\*"([A-Z]+)\\*"/g;
-      let match;
-      const seen = new Set();
-      
-      while ((match = regex.exec(html)) !== null) {
-        const symbol = match[1];
-        if (seen.has(symbol)) continue;
-        
-        const start = Math.max(0, match.index - 300);
-        const end = Math.min(html.length, match.index + 1200);
-        const windowText = html.substring(start, end);
-        
-        const priceMatch = windowText.match(/\\*"preMarketPrice\\*":\s*\{\s*\\*"raw\\*":\s*(\d+(?:\.\d+)?)/) ||
-                           windowText.match(/\\*"regularMarketPrice\\*":\s*\{\s*\\*"raw\\*":\s*(\d+(?:\.\d+)?)/);
-                           
-        const changePercentMatch = windowText.match(/\\*"preMarketChangePercent\\*":\s*\{\s*\\*"raw\\*":\s*(-?\d+(?:\.\d+)?)/) ||
-                                   windowText.match(/\\*"regularMarketChangePercent\\*":\s*\{\s*\\*"raw\\*":\s*(-?\d+(?:\.\d+)?)/);
-                                   
-        const volumeMatch = windowText.match(/\\*"preMarketVolume\\*":\s*\{\s*\\*"raw\\*":\s*(\d+)/) ||
-                            windowText.match(/\\*"regularMarketVolume\\*":\s*\{\s*\\*"raw\\*":\s*(\d+)/);
-        
-        if (priceMatch && changePercentMatch) {
-          seen.add(symbol);
-          gainerList.push({
-            symbol: symbol,
-            price: parseFloat(priceMatch[1]),
-            changePercent: parseFloat(changePercentMatch[1]),
-            volume: volumeMatch ? parseInt(volumeMatch[1], 10) : 0
-          });
-        }
-      }
-      return gainerList;
-    }
-
     async function scanPremarketGappers(isManual = false) {
       const container = document.getElementById('pg-items-body');
       const btn = document.getElementById('pg-scan-btn');
@@ -2413,45 +2377,76 @@
         btn.innerHTML = `<div class="spinner" style="width:12px; height:12px; border-width:1px;"></div>`;
       }
 
-      let gappers = [];
+      // Candidate ticker pool for active premarket gaps
+      const candidatePool = new Set([
+        'TSLA', 'NVDA', 'SMCI', 'MARA', 'RIOT', 'CLSK', 'COIN', 'PLTR', 'AMD', 'AAPL',
+        'MSFT', 'AMZN', 'META', 'GOOGL', 'NFLX', 'BABA', 'NIO', 'JD', 'F', 'PLUG',
+        'SOUN', 'MSTR', 'UPST', 'RXRX', 'ASTS', 'CVNA', 'HOOD', 'RDDT', 'SMR', 'RBLX',
+        'AFRM', 'LCID', 'RIVN', 'SOFI', 'PATH', 'IONQ', 'QUBT', 'RGTI', 'KIDZ', 'TEM'
+      ]);
+
+      // Try dynamically harvesting extra tickers from Yahoo Gainers HTML pages
       try {
-        const html = await fetchWithProxy('https://finance.yahoo.com/markets/stocks/gainers/');
-        gappers = regexParseYahooGainers(html);
-      } catch (e) {
-        console.warn("Yahoo Finance gainers scan failed, trying Finnhub fallback...", e);
-      }
-
-      // Finnhub fallback if Yahoo Finance returned empty or failed
-      if (gappers.length === 0) {
-        const finnhubKey = localStorage.getItem('finnhub_api_key');
-        if (finnhubKey && finnhubKey.trim().length > 0) {
-          const fallbackTickers = ['TSLA', 'NVDA', 'SMCI', 'MARA', 'RIOT', 'COIN', 'PLTR', 'AMD', 'AAPL', 'MSFT', 'AMZN', 'META', 'GOOGL', 'NFLX', 'BABA', 'NIO', 'JD', 'F', 'PLUG', 'SOUN'];
-          const quotes = await Promise.all(fallbackTickers.map(async (sym) => {
-            try {
-              const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${finnhubKey}`);
-              if (res.ok) {
-                const data = await res.json();
-                return {
-                  symbol: sym,
-                  price: data.c || 0,
-                  changePercent: data.dp || 0,
-                  volume: 120000 // Mock volume to pass filter
-                };
-              }
-            } catch (err) {
-              console.warn(`Finnhub quote fetch fallback failed for ${sym}`, err);
-            }
-            return null;
-          }));
-          gappers = quotes.filter(q => q !== null);
+        const gainersHtml = await fetchWithProxy('https://finance.yahoo.com/markets/stocks/gainers/');
+        const symMatches = gainersHtml.match(/"symbol":"([A-Z]+)"/g) || gainersHtml.match(/"ticker":"([A-Z]+)"/g);
+        if (symMatches) {
+          symMatches.forEach(m => {
+            const sym = m.replace(/"symbol":"|"ticker":"|"/g, '');
+            if (sym && sym.length <= 5) candidatePool.add(sym);
+          });
         }
+      } catch (e) {
+        console.warn("Failed to harvest extra symbols from Yahoo Gainers HTML:", e);
       }
 
-      // Apply FILTERS
-      const filtered = gappers
-        .filter(g => g.changePercent > 5 && g.price > 3 && g.volume > 50000)
+      // Fetch real-time pre-market quote data with includePrePost=true for all candidate tickers
+      const symbolsArray = Array.from(candidatePool);
+      const quotes = await Promise.all(symbolsArray.map(async (sym) => {
+        try {
+          const chartUrl = `https://query2.finance.yahoo.com/v7/finance/chart/${sym}?interval=1m&range=1d&includePrePost=true`;
+          const json = await fetchYahooFinanceJSON(chartUrl);
+          const meta = json?.chart?.result?.[0]?.meta;
+          const indicators = json?.chart?.result?.[0]?.indicators?.quote?.[0];
+          
+          if (meta) {
+            const prevClose = meta.chartPreviousClose || meta.previousClose;
+            const livePrice = meta.preMarketPrice || meta.regularMarketPrice;
+            
+            const volumes = (indicators?.volume || []).filter(v => v !== null);
+            const totalVol = volumes.reduce((a, b) => a + b, 0) || meta.regularMarketVolume || meta.preMarketVolume || 50000;
+            
+            if (prevClose && livePrice) {
+              const gapPct = ((livePrice - prevClose) / prevClose) * 100;
+              return {
+                symbol: sym,
+                price: livePrice,
+                prevClose: prevClose,
+                changePercent: gapPct,
+                volume: totalVol
+              };
+            }
+          }
+        } catch (err) {
+          console.warn(`Premarket chart fetch failed for ${sym}:`, err);
+        }
+        return null;
+      }));
+
+      let gappers = quotes.filter(q => q !== null);
+
+      // Apply FILTERS for pre-market gainers (>3% gap up, price > $2, volume > 20,000)
+      let filtered = gappers
+        .filter(g => g.changePercent > 3.0 && g.price > 2.0 && g.volume > 20000)
         .sort((a, b) => b.changePercent - a.changePercent)
         .slice(0, 10);
+
+      // Fallback if no tickers passed >3% gap up, lower threshold to >1%
+      if (filtered.length === 0) {
+        filtered = gappers
+          .filter(g => g.changePercent > 1.0 && g.price > 2.0)
+          .sort((a, b) => b.changePercent - a.changePercent)
+          .slice(0, 10);
+      }
 
       container.innerHTML = '';
       if (btn) {
@@ -2460,7 +2455,7 @@
       }
 
       if (filtered.length === 0) {
-        container.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--txt-sec); padding:20px;">No gappers found matching criteria (>5% Gap, >$3 Price, >50k Vol).</td></tr>`;
+        container.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--txt-sec); padding:20px;">No gappers found matching premarket criteria.</td></tr>`;
         return;
       }
 
