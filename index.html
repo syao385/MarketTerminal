@@ -2114,29 +2114,44 @@
       if (vixNotice) vixNotice.style.display = 'block';
     }
 
+    function getAllFeedKeys() {
+      const keys = ['wsj', 'cnbc', 'reddit_stocks', 'reddit_wsb', 'google_news'];
+      const finnhubKey = localStorage.getItem('finnhub_api_key');
+      if (finnhubKey && finnhubKey.trim().length > 0) {
+        keys.push('general');
+      }
+      return keys;
+    }
+
     function updateNewsTabVisibility() {
       const container = document.getElementById('news-feed-tabs');
       if (!container) return;
 
+      const activeTabBtn = container.querySelector('.tab-btn.active');
+      const activeFeed = activeTabBtn ? activeTabBtn.getAttribute('data-feed') : 'all';
+
       const finnhubKey = localStorage.getItem('finnhub_api_key');
+      let tabsHtml = `
+        <button class="tab-btn ${activeFeed === 'all' ? 'active' : ''}" data-feed="all">ALL</button>
+        <button class="tab-btn ${activeFeed === 'wsj' ? 'active' : ''}" data-feed="wsj">WSJ</button>
+        <button class="tab-btn ${activeFeed === 'cnbc' ? 'active' : ''}" data-feed="cnbc">CNBC</button>
+        <button class="tab-btn ${activeFeed === 'reddit_stocks' ? 'active' : ''}" data-feed="reddit_stocks">r/stocks</button>
+        <button class="tab-btn ${activeFeed === 'reddit_wsb' ? 'active' : ''}" data-feed="reddit_wsb">r/wsb</button>
+        <button class="tab-btn ${activeFeed === 'google_news' ? 'active' : ''}" data-feed="google_news">GOOGLE</button>
+      `;
+
       if (finnhubKey && finnhubKey.trim().length > 0) {
-        // Finnhub tab layout
-        container.innerHTML = `
-          <button class="tab-btn active" data-feed="general">MARKET NEWS</button>
-          <button class="tab-btn" data-feed="company">COMPANY NEWS</button>
-          <button class="tab-btn" data-feed="reddit_stocks">r/stocks</button>
-          <button class="tab-btn" data-feed="reddit_wsb">r/wsb</button>
+        tabsHtml += `
+          <button class="tab-btn ${activeFeed === 'general' ? 'active' : ''}" data-feed="general">FINNHUB MKT</button>
+          <button class="tab-btn ${activeFeed === 'company' ? 'active' : ''}" data-feed="company">FINNHUB CO</button>
         `;
-      } else {
-        // Standard RSS layout
-        container.innerHTML = `
-          <button class="tab-btn active" data-feed="all">ALL</button>
-          <button class="tab-btn" data-feed="wsj">WSJ</button>
-          <button class="tab-btn" data-feed="cnbc">CNBC</button>
-          <button class="tab-btn" data-feed="reddit_stocks">r/stocks</button>
-          <button class="tab-btn" data-feed="reddit_wsb">r/wsb</button>
-          <button class="tab-btn" data-feed="google_news">GOOGLE</button>
-        `;
+      }
+
+      container.innerHTML = tabsHtml;
+
+      if (!container.querySelector('.tab-btn.active')) {
+        const firstTab = container.querySelector('.tab-btn[data-feed="all"]');
+        if (firstTab) firstTab.classList.add('active');
       }
 
       // Re-attach tab click listeners
@@ -2860,7 +2875,7 @@
       
       if (activeFeed === 'all') {
         let merged = [];
-        ['wsj', 'cnbc', 'reddit_stocks', 'reddit_wsb', 'google_news'].forEach(k => {
+        getAllFeedKeys().forEach(k => {
           if (cachedFeeds[k]) merged.push(...cachedFeeds[k]);
         });
         merged.sort((a, b) => {
@@ -2884,7 +2899,7 @@
       
       if (activeFeed === 'all') {
         let merged = [];
-        ['wsj', 'cnbc', 'reddit_stocks', 'reddit_wsb', 'google_news'].forEach(k => {
+        getAllFeedKeys().forEach(k => {
           if (cachedFeeds[k]) merged.push(...cachedFeeds[k]);
         });
         merged.sort((a, b) => {
@@ -3804,7 +3819,7 @@ You must return a raw JSON block ONLY. Do not wrap in markdown code fences or ba
       
       let items = [];
       if (activeFeed === 'all') {
-        ['wsj', 'cnbc', 'google_news', 'reddit_stocks', 'reddit_wsb'].forEach(k => {
+        getAllFeedKeys().forEach(k => {
           if (cachedFeeds[k]) items.push(...cachedFeeds[k]);
         });
       } else {
@@ -3872,7 +3887,7 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
     // --- END EXTENSIONS ---
 
     async function refreshGlobalNewsCache(searchQuery = '') {
-      const feedKeys = ['wsj', 'cnbc', 'reddit_stocks', 'reddit_wsb', 'google_news'];
+      const feedKeys = getAllFeedKeys();
       await Promise.all(feedKeys.map(async (key) => {
         try {
           const q = key === 'google_news' ? searchQuery : '';
@@ -3927,7 +3942,7 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
 
         if (feedKey === 'all') {
           // Aggregate all feeds
-          const feedKeys = ['wsj', 'cnbc', 'reddit_stocks', 'reddit_wsb', 'google_news'];
+          const feedKeys = getAllFeedKeys();
           
           // Fetch any feeds that are empty
           await Promise.all(feedKeys.map(async (key) => {
