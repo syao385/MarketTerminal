@@ -2900,12 +2900,17 @@
       container.innerHTML = '';
 
       let filteredItems = items;
-      if (activeNewsFilterTag) {
+      
+      const activeFeedBtn = document.querySelector('#news-feed-tabs .tab-btn.active');
+      const activeFeed = activeFeedBtn ? activeFeedBtn.getAttribute('data-feed') : 'all';
+
+      // Bypass local tag filter on google_news tab since it is already pre-filtered by keyword at the API level
+      if (activeNewsFilterTag && activeFeed !== 'google_news') {
         const tagLower = activeNewsFilterTag.toLowerCase();
         filteredItems = items.filter(item => 
-          item.badges.some(b => b.toLowerCase() === tagLower) || 
-          item.tickers.some(t => t.toLowerCase() === tagLower) ||
-          item.title.toLowerCase().includes(tagLower) ||
+          (item.badges && Array.isArray(item.badges) && item.badges.some(b => b.toLowerCase() === tagLower)) || 
+          (item.tickers && Array.isArray(item.tickers) && item.tickers.some(t => t.toLowerCase() === tagLower)) ||
+          (item.title && item.title.toLowerCase().includes(tagLower)) ||
           (item.description && item.description.toLowerCase().includes(tagLower))
         );
       }
