@@ -683,6 +683,20 @@
         </div>
         <div class="chart-wrap">
           <div id="chart-container" style="width: 100%; height: 100%; position: relative;"></div>
+          <!-- Aether Playbook Indicators HUD Overlay -->
+          <div id="playbook-hud" style="position: absolute; top: 10px; left: 10px; z-index: 5; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--txt-prim); display: none; pointer-events: none; flex-direction: column; gap: 4px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);">
+            <div style="font-weight: bold; text-transform: uppercase; border-bottom: 1px solid var(--border); padding-bottom: 2px; margin-bottom: 2px; display: flex; justify-content: space-between; gap: 20px;">
+              <span>Aether Playbook</span>
+              <span id="hud-regime" style="color: var(--success);">-</span>
+            </div>
+            <div>Call Wall: <span id="hud-call-wall" style="color: #10B981;">-</span></div>
+            <div>Put Wall: <span id="hud-put-wall" style="color: #EF4444;">-</span></div>
+            <div>GEX Flip: <span id="hud-gex-flip" style="color: #F59E0B;">-</span></div>
+            <div style="border-top: 1px solid var(--border); margin-top: 2px; padding-top: 2px; display: flex; gap: 10px;">
+              <span>RVOL TS: <span id="hud-rvol-ts" style="color: var(--txt-sec);">-</span></span>
+              <span>RVOL RM: <span id="hud-rvol-rm" style="color: var(--txt-sec);">-</span></span>
+            </div>
+          </div>
           <div id="chart-loading" class="chart-overlay" style="display: none;">
             <div class="spinner"></div>
           </div>
@@ -1543,12 +1557,31 @@
 
     async function loadPlaybookIndicators(symbol) {
       activePlaybookIndicators = null;
+      const hud = document.getElementById('playbook-hud');
+      if (hud) hud.style.display = 'none';
       try {
         const response = await fetch(`http://127.0.0.1:8000/api/indicators?symbol=${symbol}`);
         const data = await response.json();
         if (data.success) {
           activePlaybookIndicators = data;
           console.log("Loaded Aether playbook indicators:", data);
+          if (hud) {
+            hud.style.display = 'flex';
+            document.getElementById('hud-call-wall').textContent = `$${data.gex.call_wall.toFixed(2)}`;
+            document.getElementById('hud-put-wall').textContent = `$${data.gex.put_wall.toFixed(2)}`;
+            document.getElementById('hud-gex-flip').textContent = `$${data.gex.gex_flip.toFixed(2)}`;
+            
+            const regimeEl = document.getElementById('hud-regime');
+            regimeEl.textContent = data.gex.regime.toUpperCase();
+            if (data.gex.regime === 'Positive Gamma') {
+              regimeEl.style.color = '#10B981';
+            } else {
+              regimeEl.style.color = '#EF4444';
+            }
+            
+            document.getElementById('hud-rvol-ts').textContent = `${data.rvol.rvol_ts.toFixed(2)}x`;
+            document.getElementById('hud-rvol-rm').textContent = `${data.rvol.rvol_rm.toFixed(2)}x`;
+          }
         }
       } catch (err) {
         console.warn("Aether local algo-engine server offline or unable to fetch indicators:", err);
