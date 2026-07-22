@@ -1467,6 +1467,72 @@
         return;
       }
 
+      // Compute SMAs on the fly if not present in points
+      const computeSMA = (pts, period, key) => {
+        for (let j = 0; j < pts.length; j++) {
+          if (pts[j][key] !== undefined && pts[j][key] !== null) continue;
+          if (j < period - 1) {
+            pts[j][key] = null;
+            continue;
+          }
+          let sum = 0;
+          for (let k = 0; k < period; k++) {
+            sum += pts[j - k].close;
+          }
+          pts[j][key] = sum / period;
+        }
+      };
+      computeSMA(points, 20, 'sma_20');
+      computeSMA(points, 50, 'sma_50');
+      computeSMA(points, 200, 'sma_200');
+
+      // Helper function to calculate gaps on the fly
+      const calculateGapsOnFly = (pts) => {
+        const gapsList = [];
+        for (let j = 1; j < pts.length; j++) {
+          const prev = pts[j-1];
+          const curr = pts[j];
+          if (prev.high === undefined || curr.low === undefined) continue;
+          if (curr.low > prev.high) {
+            gapsList.push({ type: 'bullish', top: curr.low, bottom: prev.high, start_idx: j, mitigated: false });
+          } else if (curr.high < prev.low) {
+            gapsList.push({ type: 'bearish', top: prev.low, bottom: curr.high, start_idx: j, mitigated: false });
+          }
+          const close = curr.close;
+          for (let g of gapsList) {
+            if (!g.mitigated && g.start_idx < j) {
+              if (g.type === 'bullish' && close < g.bottom) g.mitigated = true;
+              else if (g.type === 'bearish' && close > g.top) g.mitigated = true;
+            }
+          }
+        }
+        return gapsList.filter(g => !g.mitigated);
+      };
+
+      // Helper function to calculate FVGs on the fly
+      const calculateFVGsOnFly = (pts) => {
+        const fvgsList = [];
+        for (let j = 2; j < pts.length; j++) {
+          const c1 = pts[j-2];
+          const c2 = pts[j-1];
+          const c3 = pts[j];
+          if (c1.high === undefined || c3.low === undefined) continue;
+          if (c1.high < c3.low) {
+            fvgsList.push({ type: 'bullish', top: c3.low, bottom: c1.high, start_idx: j-1, mitigated: false });
+          } else if (c1.low > c3.high) {
+            fvgsList.push({ type: 'bearish', top: c1.low, bottom: c3.high, start_idx: j-1, mitigated: false });
+          }
+          const close = c3.close;
+          for (let f of fvgsList) {
+            if (!f.mitigated && f.start_idx < j) {
+              if (f.type === 'bullish' && close < f.bottom) f.mitigated = true;
+              else if (f.type === 'bearish' && close > f.top) f.mitigated = true;
+            }
+          }
+        }
+        return fvgsList.filter(f => !f.mitigated);
+      };
+
       // 1. Setup viewport dimensions (Price vs Volume Panes)
       const priceHeight = height * 0.72;
       const volPaneTop = priceHeight + 10;
@@ -1482,17 +1548,26 @@
       
       if (activePlaybookIndicators && activePlaybookIndicators.symbol === activeTicker) {
         const gex = activePlaybookIndicators.gex;
-        const buffer = (maxPrice - minPrice) * 0.25;
-        
-        if (gex.call_wall && gex.call_wall > maxPrice && gex.call_wall < maxPrice + buffer) {
-          chartMax = gex.call_wall;
+        if (gex.call_wall && gex.call_wall > maxPrice) {
+          chartMax = Math.max(chartMax, gex.call_wall * 1.02);
         }
-        if (gex.put_wall && gex.put_wall < minPrice && gex.put_wall > minPrice - buffer) {
-          chartMin = gex.put_wall;
+        if (gex.put_wall && gex.put_wall < minPrice && gex.put_wall > 0) {
+          chartMin = Math.min(chartMin, gex.put_wall * 0.98);
         }
       }
       
       const range = (chartMax - chartMin) || 1;
+
+      // Calculate unmitigated gaps and FVGs on the fly as fallbacks if indicator API is offline
+      let gaps = [];
+      let fvgs = [];
+      if (activePlaybookIndicators && activePlaybookIndicators.symbol === activeTicker) {
+        gaps = activePlaybookIndicators.gaps || [];
+        fvgs = activePlaybookIndicators.fvgs || [];
+      } else {
+        gaps = calculateGapsOnFly(points);
+        fvgs = calculateFVGsOnFly(points);
+      }
 
       // Draw background grid lines (price pane)
       ctx.strokeStyle = '#E8E8EC'; ctx.lineWidth = 1;
@@ -1504,45 +1579,40 @@
       const getY = (val) => priceHeight - 20 - ((val - chartMin) / range) * (priceHeight - 35);
 
       // Draw Unmitigated Gaps and Fair Value Gaps (FVGs)
-      if (activePlaybookIndicators && activePlaybookIndicators.symbol === activeTicker) {
-        const drawZone = (zone, label, colorFill, colorBorder) => {
-          if (zone.top && zone.bottom) {
-            const yTop = getY(zone.top);
-            const yBottom = getY(zone.bottom);
-            const xStart = getX(zone.start_idx);
-            const xEnd = width - 55;
-            
-            ctx.fillStyle = colorFill;
-            ctx.fillRect(xStart, Math.min(yTop, yBottom), xEnd - xStart, Math.abs(yTop - yBottom));
-            
-            ctx.strokeStyle = colorBorder;
-            ctx.lineWidth = 1;
-            ctx.setLineDash([3, 3]);
-            ctx.strokeRect(xStart, Math.min(yTop, yBottom), xEnd - xStart, Math.abs(yTop - yBottom));
-            ctx.setLineDash([]);
-            
-            ctx.font = '8px JetBrains Mono';
-            ctx.fillStyle = colorBorder;
-            ctx.textAlign = 'left';
-            ctx.fillText(label, xStart + 4, Math.min(yTop, yBottom) + 9);
-          }
-        };
+      const drawZone = (zone, label, colorFill, colorBorder) => {
+        if (zone.top && zone.bottom) {
+          const yTop = getY(zone.top);
+          const yBottom = getY(zone.bottom);
+          const xStart = getX(zone.start_idx);
+          const xEnd = width - 55;
+          
+          ctx.fillStyle = colorFill;
+          ctx.fillRect(xStart, Math.min(yTop, yBottom), xEnd - xStart, Math.abs(yTop - yBottom));
+          
+          ctx.strokeStyle = colorBorder;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]);
+          ctx.strokeRect(xStart, Math.min(yTop, yBottom), xEnd - xStart, Math.abs(yTop - yBottom));
+          ctx.setLineDash([]);
+          
+          ctx.font = '8px JetBrains Mono';
+          ctx.fillStyle = colorBorder;
+          ctx.textAlign = 'left';
+          ctx.fillText(label, xStart + 4, Math.min(yTop, yBottom) + 9);
+        }
+      };
 
-        const gaps = activePlaybookIndicators.gaps || [];
-        const fvgs = activePlaybookIndicators.fvgs || [];
+      gaps.forEach(g => {
+        const fill = g.type === 'bullish' ? 'rgba(16, 185, 129, 0.06)' : 'rgba(239, 68, 68, 0.06)';
+        const border = g.type === 'bullish' ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)';
+        drawZone(g, g.type === 'bullish' ? 'BULL GAP' : 'BEAR GAP', fill, border);
+      });
 
-        gaps.forEach(g => {
-          const fill = g.type === 'bullish' ? 'rgba(16, 185, 129, 0.06)' : 'rgba(239, 68, 68, 0.06)';
-          const border = g.type === 'bullish' ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)';
-          drawZone(g, g.type === 'bullish' ? 'BULL GAP' : 'BEAR GAP', fill, border);
-        });
-
-        fvgs.forEach(f => {
-          const fill = f.type === 'bullish' ? 'rgba(59, 130, 246, 0.06)' : 'rgba(239, 68, 68, 0.06)';
-          const border = f.type === 'bullish' ? 'rgba(59, 130, 246, 0.35)' : 'rgba(239, 68, 68, 0.35)';
-          drawZone(f, f.type === 'bullish' ? 'BULL FVG' : 'BEAR FVG', fill, border);
-        });
-      }
+      fvgs.forEach(f => {
+        const fill = f.type === 'bullish' ? 'rgba(59, 130, 246, 0.06)' : 'rgba(239, 68, 68, 0.06)';
+        const border = f.type === 'bullish' ? 'rgba(59, 130, 246, 0.35)' : 'rgba(239, 68, 68, 0.35)';
+        drawZone(f, f.type === 'bullish' ? 'BULL FVG' : 'BEAR FVG', fill, border);
+      });
 
       // Draw Candlesticks
       const bodyWidth = Math.max(3, ((width - 60) / points.length) * 0.7);
@@ -1686,10 +1756,13 @@
         ctx.fillText('CVD', width - 50, getCvdY(cvdValues[cvdValues.length - 1]));
       }
 
-      // Draw Chart Price Legend/Labels on Y-Axis
+      // Draw Chart Price Legend/Labels on Y-Axis (spaced along grid lines)
       ctx.font = '10px JetBrains Mono'; ctx.fillStyle = '#6B6B6B'; ctx.textAlign = 'right';
-      ctx.fillText(chartMax.toFixed(2), width - 5, 15);
-      ctx.fillText(chartMin.toFixed(2), width - 5, priceHeight - 5);
+      for (let i = 0; i <= 4; i++) {
+        const val = chartMax - (i / 4) * range;
+        const y = getY(val);
+        ctx.fillText(val.toFixed(2), width - 5, y + 4);
+      }
       
       // Draw Volume Label
       ctx.fillText(formatVolume(maxVol), width - 5, volPaneTop + 12);
@@ -4759,7 +4832,7 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
 
       tableBody.innerHTML = activeScan.results.map((result, idx) => {
         return `
-          <tr class="scanner-row" onclick="viewDetailedScorecard('${activeSetupTab}', ${idx})" style="border-bottom: 1px solid var(--border); cursor: pointer; hover: background: var(--bg-sec);">
+          <tr class="scanner-row" onclick="viewDetailedScorecard('${activeSetupTab}', ${idx}); loadTicker('${result.symbol}');" style="border-bottom: 1px solid var(--border); cursor: pointer; hover: background: var(--bg-sec);">
             <td style="padding: 8px; font-weight: bold; color: var(--txt-prim);">${result.symbol}</td>
             <td style="padding: 8px; color: var(--txt-sec);">${result.timestamp}</td>
             <td style="padding: 8px; font-weight: bold; color: var(--accent);">${result.score.toFixed(1)} / 10.0</td>
