@@ -57,7 +57,7 @@ By integrating options market maker positioning (dealers' hedging constraints) a
 
 ### A. Volatility Regimes via GEX Flip
 *   **Negative Gamma Regime (Below GEX Flip):** Dealers hedge by selling on price drops and buying on price rises, structurally **accelerating volatility**. Breakout strategies have a much higher success rate in this regime because dealer hedging loops feed the trend.
-*   **Positive Gamma Regime (Above GEX Flip):** Dealers hedge by buying on price drops and selling on price rises, **suppressing volatility**. Breakouts are continuously absorbed, making mean reversion and pullback strategies the dominant setups.
+*   **Positive Gamma Regime (Above GEX Flip):** Dealers hedge by buying price drops and selling price rises, **suppressing volatility**. Breakouts are continuously absorbed, making mean reversion and pullback strategies the dominant setups.
 
 ### B. Micro-Order Flow Triggers
 *   **Cumulative Delta Trend:** Shows the cumulative difference between market buy and market sell orders:
@@ -154,7 +154,7 @@ To achieve maximum quantitative accuracy, the 15 setups are divided into **three
 
 #### Setup 9: Volatility Contraction Pattern (VCP) & Cup & Handle Pivot
 *   **Concept:** Systematic absorption of overhead supply. As sellers dry up, price waves contract in depth. The breakout above the final tight consolidation pivot (the "cheat" or "handle") launches the next leg.
-*   **Trigger / Scanner Condition:** Stock in Stage 2 uptrend ($Price > 150 > 200$ EMA). Price exhibits 2 to 4 distinct contractions in price volatility (e.g., $20\% \rightarrow 10\% \rightarrow 4\%$). Volume dries up to $<50\%$ of ADV on the final contraction. Entry is triggered when price crosses the contraction pivot (the "cheat") on volume expansion $>2\times$ average.
+*   **Trigger / Scanner Condition:** Stock in Stage 2 uptrend ($Price > 150 > 200$ EMA). Price exhibits 2 to 4 distinct contractions in price volatility (e.g., $20\% \rightarrow 10\% \rightarrow 4\%$). Volume dries up to $<50\%$ of ADV on the final contraction. Entry is triggered when price closes the contraction pivot (the "cheat") on volume expansion $>2\times$ average.
 *   **Stop-Loss:** Low of the last contraction wave (the handle low).
 *   **Target:** $+30\%$ extension from the pivot breakout.
 *   **Exit / Trailing Stop:** Sell 40% at $2\text{R}$, sell 30% at $4\text{R}$, and trail the final 30% using the daily 21-EMA. Because the entry is extremely tight, these setups frequently yield risk-reward ratios $> 4:1$.
@@ -254,3 +254,17 @@ Position sizing and risk allocation are dynamically determined by the score calc
 1.  **Stop-Loss Discipline:** Stop-losses are hard-coded on entry. No manual adjustment of stops lower is permitted.
 2.  **Breakeven Adjustments:** For all breakout plays (MOS-B) and VCP breakouts (MOS-A), once Partial Take-Profit 1 (PTP 1) is achieved, the stop-loss of the remaining position **must be moved to the entry price (breakeven)**.
 3.  **Slippage Penalty:** If execution slippage exceeds 0.5% of the entry price, size down by 50% for subsequent entries on that ticker to protect risk parameters.
+
+---
+
+## 6. Algorithmic Timing & Execution Window Matrix
+
+To maximize execution quality, trades are restricted to specific time windows aligned with intraday volume and institutional participation:
+
+| Setup Category | Scanner / Filter Window | Entry Trigger Window | Trailing Stop Activation | Target Exit Window / PTP Plan |
+| :--- | :--- | :--- | :--- | :--- |
+| **Intraday Breakouts**<br>*(Setup 1, 12, 4, 6)* | **09:00 AM - 09:25 AM** (Premarket scan / candidate list) | **09:35 AM - 10:15 AM EST** (Opening liquidity drive) | Immediately upon PTP 1 completion (Breakeven stop activated) | Take PTP 1 at $1.5\text{R}$ into strength. Close remainder before **03:55 PM EST** (no overnight hold). |
+| **Intraday Pullbacks**<br>*(Setup 5, 10, 11 - Intraday)* | **10:00 AM - 11:30 AM** (Active breakout pullbacks) | **10:15 AM - 11:45 AM EST** (Intraday trend establishment) | On 1st green candle close on the 5-minute chart following entry | Take PTP 1 at HOD / prior resistance. Close remainder before **03:55 PM EST**. |
+| **Swing Breakouts**<br>*(Setup 3, 7, 8, 13, 14, 15)* | **03:30 PM - 04:00 PM** (Identify strong daily candle closes) | **03:45 PM - 03:59 PM EST** (Closing bell confirmation) OR Day 2 open | End-of-Day (daily close) stop updates; trail along daily 9-EMA | 3-Tier PTP: Sell 40% at $2\text{R}$, 30% at $4\text{R}$, trail final 30%. Hold 2 to 20 days. |
+| **Swing Anticipation**<br>*(Setup 9 - VCP)* | **04:15 PM - 06:00 PM** (Daily scan for volume dry-up) | **09:30 AM - 10:00 AM EST** (Day of breakout cheat pivot) | Upon daily close of breakout day; trail along daily 21-EMA | Sell 40% at $2\text{R}$, 30% at $4\text{R}$, trail final 30%. Hold 10 to 45 days. |
+| **Intraday Fades**<br>*(Setup 2)* | **09:15 AM - 09:30 AM** (Identify weak catalyst gappers) | **09:31 AM - 09:50 AM EST** (Rejection of PMH/GEX wall) | Move to breakeven after $1.0\text{R}$ drop | Cover 50% at $1.5\text{R}$, cover remainder at GEX Flip level. Close before **03:55 PM EST**. |
