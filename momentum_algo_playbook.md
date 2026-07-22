@@ -268,3 +268,26 @@ To maximize execution quality, trades are restricted to specific time windows al
 | **Swing Breakouts**<br>*(Setup 3, 7, 8, 13, 14, 15)* | **03:30 PM - 04:00 PM** (Identify strong daily candle closes) | **03:45 PM - 03:59 PM EST** (Closing bell confirmation) OR Day 2 open | End-of-Day (daily close) stop updates; trail along daily 9-EMA | 3-Tier PTP: Sell 40% at $2\text{R}$, 30% at $4\text{R}$, trail final 30%. Hold 2 to 20 days. |
 | **Swing Anticipation**<br>*(Setup 9 - VCP)* | **04:15 PM - 06:00 PM** (Daily scan for volume dry-up) | **09:30 AM - 10:00 AM EST** (Day of breakout cheat pivot) | Upon daily close of breakout day; trail along daily 21-EMA | Sell 40% at $2\text{R}$, 30% at $4\text{R}$, trail final 30%. Hold 10 to 45 days. |
 | **Intraday Fades**<br>*(Setup 2)* | **09:15 AM - 09:30 AM** (Identify weak catalyst gappers) | **09:31 AM - 09:50 AM EST** (Rejection of PMH/GEX wall) | Move to breakeven after $1.0\text{R}$ drop | Cover 50% at $1.5\text{R}$, cover remainder at GEX Flip level. Close before **03:55 PM EST**. |
+
+---
+
+## 7. Algorithmic Portfolio Architecture & System Assumptions
+
+To govern execution at the system level and prevent catastrophic drawdown or sector crowding, the algorithm operates under strict portfolio-wide boundaries.
+
+### A. Portfolio-Level Constraints & Circuit Breakers
+1.  **Systemic Daily Drawdown Limit:** If the portfolio net asset value (NAV) declines by more than **$3.0\%$** in a single trading session, the algorithm triggers a **system-wide soft liquidation** (releasing all active intraday positions) and disables new entries for the remainder of the day.
+2.  **Systemic Monthly Drawdown Limit:** If monthly drawdown exceeds **$10.0\%$**, all trading is halted, active positions are closed, and manual portfolio override is required.
+3.  **Maximum Active Positions:** The algorithm is capped at a maximum of **5 concurrent active positions** at any time to prevent capital dispersion and maintain focus on high-conviction trades.
+4.  **Sector Exposure Cap:** To prevent industry-specific crowding (e.g., holding 5 semiconductor breakouts simultaneously), exposure to any single GICS sector is capped at a maximum of **3 active positions** or **$30\%$** of total portfolio allocation.
+
+### B. Execution Logic & Order Types
+1.  **Slippage-Protected Entries:** All breakout setups (Setups 1, 3, 4, 6, 7, 8, 12, 13, 14, 15) must enter via **Buy Stop Limit orders**. Entering with raw market orders is strictly prohibited. The limit price is capped at:
+    $$\text{Limit Price} = \text{Stop Price} + \text{Slippage Tolerance (0.25\% of Stop Price)}$$
+    If price breaks out with a gap that skips the limit threshold, the order is cancelled to prevent chasing.
+2.  **Spread Filter:** Bid-ask spreads must be monitored. If the 30-second rolling average spread of the target asset exceeds **$0.5\%$** of the bid price, all entries are blocked.
+3.  **Latency Tolerance:** The system assumes a standard broker REST/WebSocket latency of **$50\text{ms} - 200\text{ms}$**. The algorithm targets highly liquid mid-to-large-cap equities ($ADV > \$20\text{M}$) where sub-millisecond execution is not required for statistical edge.
+
+### C. Data Feed Assumptions & Greek Updates
+1.  **Consolidated SIP Feed:** Volume and price calculations ($RVOL_{TS}$, $RVOL_{RM}$, $Acc_{Vol}$) assume access to a consolidated SIP data feed to ensure volume signals capture all trading venues.
+2.  **Daily GEX Updates:** Option Gamma parameters (Put Wall, Call Wall, GEX Flip level) are calculated and locked **once per day at 08:45 AM EST** using option open interest data updated by the OCC. They remain static during the trading session to avoid intraday hedging noise.
