@@ -87,15 +87,35 @@ def get_indicators(
             gex_levels["regime"] = get_gamma_regime(spot, gex_levels["gex_flip"])
             gex_data = gex_levels
 
-        # 2. RVOL Calculations (time-slice check against past 2 days intraday)
-        hist_2d = ticker.history(period="2d", interval="15m")
+        # 2. RVOL Calculations (true time-slice volume pacing check against past 20 days)
         rvol_ts = 1.0
         rvol_rm = 1.0
-        if not hist_2d.empty and len(hist_2d) >= 2:
-            today_cumulative = float(hist_2d["Volume"].iloc[-1])
-            yesterday_cumulative = float(hist_2d["Volume"].iloc[0])
-            rvol_ts = float(today_cumulative / (yesterday_cumulative if yesterday_cumulative > 0 else 1.0))
-            rvol_rm = rvol_ts
+        try:
+            df_15m = ticker.history(period="20d", interval="15m")
+            if not df_15m.empty and len(df_15m) > 10:
+                df_15m['Date'] = df_15m.index.date
+                df_15m['Time'] = df_15m.index.time
+                df_15m['Cumulative_Volume'] = df_15m.groupby('Date')['Volume'].cumsum()
+                
+                latest_bar = df_15m.iloc[-1]
+                latest_time = latest_bar['Time']
+                today_cumulative = float(latest_bar['Cumulative_Volume'])
+                
+                historical_at_time = df_15m[df_15m['Time'] == latest_time]
+                historical_excluding_today = historical_at_time[historical_at_time['Date'] != latest_bar['Date']]
+                
+                historical_cumulative_volumes = historical_excluding_today['Cumulative_Volume'].tolist()
+                
+                rvol_ts = calculate_time_slice_rvol(today_cumulative, historical_cumulative_volumes)
+                
+                daily_history = ticker.history(period="21d")
+                if not daily_history.empty:
+                    historical_daily_volumes = daily_history["Volume"].iloc[:-1]
+                    adv_20d = float(historical_daily_volumes.mean())
+                    if adv_20d > 0:
+                        rvol_rm = float(today_cumulative / adv_20d)
+        except Exception as rvol_err:
+            logger.error(f"Error calculating RVOL: {rvol_err}")
             
         # Format the points dataset to send to frontend
         history_subset = history.tail(tf_conf["tail"])
