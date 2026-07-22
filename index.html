@@ -1910,9 +1910,17 @@
         dot.className = 'dot-status warning'; txt.textContent = 'DEMO MODE';
       }
       
-      const model = localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
+      const model = getActiveGeminiModel();
       const display = document.getElementById('ai-model-display');
       if (display) display.textContent = model;
+    }
+
+    function getActiveGeminiModel() {
+      let model = localStorage.getItem('gemini_model');
+      if (!model || model.trim() === '' || model === 'null' || model === 'undefined') {
+        model = 'gemini-1.5-flash';
+      }
+      return model.trim();
     }
 
     async function runAiAnalysis() {
@@ -1938,7 +1946,7 @@
 
       const promptText = `Analyze the stock ticker ${activeTicker}. Current price is $${price}. Provide a high-conviction, professional 3-sentence read on this asset. Sentence 1: Focus on recent price action, volume momentum, and sentiment. Sentence 2: Identify the primary technical or fundamental risk factor right now. Sentence 3: Detail the critical price levels or catalysts to monitor over the next week. Ensure the response is exactly three sentences long and fits a high-density financial terminal style.`;
       
-      const model = localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
+      const model = getActiveGeminiModel();
       let attempts = 0;
       const maxAttempts = 3;
       let response = null;
@@ -2478,7 +2486,7 @@
 
       // Fetch catalysts sequentially
       const geminiKey = localStorage.getItem('gemini_api_key');
-      const model = localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
+      const model = getActiveGeminiModel();
 
       for (let i = 0; i < filtered.length; i++) {
         const g = filtered[i];
@@ -2675,7 +2683,7 @@
 
       container.innerHTML = `<tr><td colspan="2" style="text-align:center; color:var(--txt-sec); padding:20px;"><div class="spinner" style="margin: 0 auto 8px auto;"></div>Loading in-play stocks from Gemini...</td></tr>`;
 
-      const model = localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
+      const model = getActiveGeminiModel();
       const prompt = "Identify the top 10 stocks currently in play in the US stock market today. Return only a valid JSON array of objects, where each object has a 'symbol' (uppercase stock ticker) and a 'catalyst' (a short sentence explanation of why it is in play, maximum 8 words). Do not include any markdown code blocks, backticks, or other conversational text. Example: [{\"symbol\": \"AAPL\", \"catalyst\": \"iPhone sales surge\"}]";
 
       try {
@@ -3528,7 +3536,7 @@
       btn.innerHTML = `<div class="spinner" style="width:10px; height:10px; border-width:1px;"></div><span>Fetching...</span>`;
 
       const key = localStorage.getItem('gemini_api_key');
-      const model = localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
+      const model = getActiveGeminiModel();
 
       const aaiiEl = document.getElementById('val-aaii');
       const naaimEl = document.getElementById('val-naaim');
@@ -3780,7 +3788,7 @@ You must return a raw JSON block ONLY. Do not wrap in markdown code fences or ba
       output.textContent = 'Synthesizing news sentiment...';
 
       const key = localStorage.getItem('gemini_api_key');
-      const model = localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
+      const model = getActiveGeminiModel();
 
       if (!key || key.trim().length < 12) {
         setTimeout(() => {
@@ -4035,7 +4043,7 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
     window.addEventListener('load', async () => {
       // 1. Initial Local Storage states & Model Migration
       const storedModel = localStorage.getItem('gemini_model');
-      if (!storedModel || storedModel === 'gemini-3.5-flash' || storedModel === 'gemini-2.5-flash' || storedModel === 'gemini-2.0-flash') {
+      if (!storedModel || storedModel.trim() === '' || storedModel === 'null' || storedModel === 'undefined' || storedModel === 'gemini-3.5-flash' || storedModel === 'gemini-2.5-flash' || storedModel === 'gemini-2.0-flash') {
         localStorage.setItem('gemini_model', 'gemini-1.5-flash');
       }
       getPortfolio();
@@ -4197,7 +4205,7 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
 
       setBtn.addEventListener('click', () => {
         apiInput.value = localStorage.getItem('gemini_api_key') || '';
-        document.getElementById('model-input').value = localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
+        document.getElementById('model-input').value = getActiveGeminiModel();
         document.getElementById('finnhub-key-input').value = localStorage.getItem('finnhub_api_key') || '';
         modal.style.display = 'flex';
       });
