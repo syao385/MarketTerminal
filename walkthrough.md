@@ -99,3 +99,16 @@ Executing the validator script on `NVDA` for the `Standard ORB (Setup 12)` over 
 - **Best Parameter Found:** `{'rvol_threshold': 1.5, 'ptp_1_r': 3.0}` with net profit of **`+$483.36`**.
 - **Consolidation Status:** Passed. All calculations, setups, scorecards, backtests, and optimization models execute without errors.
 
+### B. Enforced Custom Canvas Candlestick Charting
+- Modified `initTradingViewWidget` to always initialize and render the custom canvas candlestick chart using Yahoo Finance data points, preventing any automated fallbacks or transitions back to the TradingView widget iframe.
+- GEX Option walls, moving averages, and unmitigated gaps/FVGs overlay automatically if the local microservice is online, while standard candlesticks and volume indicators remain functional if the engine is offline.
+
+### C. Playbook Scanner & Scorecard Cockpit UI (`index.html`)
+- Built an **Aether Playbook Scanner Cockpit** component between the chart and the AI analyst cards:
+  - **Left Navigation Tabs:** scrollable selection list for all 15 setups (from Gap and Go to PEAD Breakout) with real-time numeric badges displaying the active trigger count for each setup.
+  - **Center Trigger Table:** lists all symbols currently triggering the active setup, detailing their timestamp, MOS score, and conviction tier, along with a "View Chart" shortcut button.
+  - **Right MOS Scorecard Breakdown Card:** displays a detailed rating gauge and factor-by-factor point breakdown (Catalyst, Volume, Vol Regime, Order Flow, Technicals) for the selected ticker.
+- Connected the frontend cockpit to the newly exposed `/api/scanner` endpoint on the local server (`port 8080`), enabling automated scans across your liquid watchlist (`AAPL`, `NVDA`, `TSLA`, `MSFT`, `SPY`, `AMZN`, `GOOG`, `AMD`, `MU`, `SMCI`).
+- Configured trigger list selections to automatically load the ticker's historical candlestick data onto the main chart container.
+
+
