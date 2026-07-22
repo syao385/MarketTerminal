@@ -705,6 +705,68 @@
         </div>
       </div>
 
+      <!-- Playbook Scanner & Scorecard Cockpit Card -->
+      <div class="card scanner-card" id="playbook-scanner-section" style="margin-top: 16px;">
+        <div class="scanner-hdr" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--bg-sec);">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="scan-eye" style="color: var(--accent); width: 18px; height: 18px;"></i>
+            <span style="font-weight: bold; font-size: 13px; color: var(--txt-prim);">PLAYBOOK SCANNER & SCORECARD COCKPIT</span>
+          </div>
+          <button class="btn-sec" onclick="triggerPlaybookScan()" style="padding: 4px 8px; font-size: 11px; display: flex; align-items: center; gap: 4px;">
+            <i data-lucide="refresh-cw" style="width: 12px; height: 12px;"></i> RUN UNIVERSAL SCAN
+          </button>
+        </div>
+        
+        <div class="scanner-body" style="display: flex; min-height: 280px; height: 350px;">
+          <!-- Left Panel: Setup Tabs -->
+          <div class="setup-tabs-sidebar" id="setup-tabs-container" style="width: 200px; border-right: 1px solid var(--border); overflow-y: auto; background: var(--bg-sec); display: flex; flex-direction: column;">
+            <!-- Rendered dynamically (Setup 1 to 15) -->
+          </div>
+          
+          <!-- Center Panel: Scanned Triggers List -->
+          <div class="setup-results-list" style="flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding: 12px;">
+            <div style="font-weight: bold; font-size: 11px; color: var(--txt-sec); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;" id="active-setup-title">
+              SELECT A PLAYBOOK SETUP
+            </div>
+            <div style="flex: 1; overflow-y: auto;">
+              <table style="width: 100%; border-collapse: collapse; font-family: 'JetBrains Mono', monospace; font-size: 11px; text-align: left;">
+                <thead>
+                  <tr style="border-bottom: 1px solid var(--border); color: var(--txt-sec);">
+                    <th style="padding: 6px 8px;">SYMBOL</th>
+                    <th style="padding: 6px 8px;">TRIGGER TIME</th>
+                    <th style="padding: 6px 8px;">MOS SCORE</th>
+                    <th style="padding: 6px 8px;">CONVICTION TIER</th>
+                    <th style="padding: 6px 8px; text-align: right;">ACTION</th>
+                  </tr>
+                </thead>
+                <tbody id="scanner-table-body">
+                  <tr>
+                    <td colspan="5" style="padding: 30px; text-align: center; color: var(--txt-sec);">Run universal scan to detect playbook triggers.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          
+          <!-- Right Panel: MOS Scorecard Detailed Breakdown -->
+          <div class="scorecard-breakdown-panel" style="width: 260px; border-left: 1px solid var(--border); background: var(--bg-sec); padding: 12px; display: flex; flex-direction: column; overflow-y: auto;">
+            <div style="font-weight: bold; font-size: 11px; color: var(--txt-sec); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">
+              MOS SCORECARD RATING
+            </div>
+            <div id="scorecard-rating-display" style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); margin-bottom: 12px; text-align: center;">
+              <div style="font-size: 28px; font-weight: bold; color: var(--accent); font-family: 'JetBrains Mono';" id="scorecard-large-score">- / 10.0</div>
+              <div style="font-size: 10px; font-weight: bold; color: var(--txt-sec); margin-top: 4px; text-transform: uppercase;" id="scorecard-conviction-tier">-</div>
+            </div>
+            <div style="flex: 1;">
+              <div style="font-weight: bold; font-size: 10px; color: var(--txt-sec); margin-bottom: 6px;">FACTOR BREAKDOWN</div>
+              <div id="scorecard-factors-container" style="display: flex; flex-direction: column; gap: 6px; font-size: 11px;">
+                <div style="color: var(--txt-sec); font-style: italic; text-align: center; margin-top: 20px;">Select a scan result to view detailed rubric scores.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Gemini Analyst Card -->
       <div class="card ai-card">
         <div class="ai-hdr">
@@ -1375,55 +1437,13 @@
     let tvWidget = null;
     function initTradingViewWidget(symbol) {
       const container = document.getElementById('chart-container');
+      const ctrls = document.querySelector('.chart-ctrls');
+      if (ctrls) ctrls.style.display = 'flex';
       
-      if (activePlaybookIndicators && activePlaybookIndicators.symbol === symbol) {
-        const ctrls = document.querySelector('.chart-ctrls');
-        if (ctrls) ctrls.style.display = 'flex';
-        renderCanvasFallbackChart('chart-container', activePlaybookIndicators.points);
-        return;
-      }
-      
-      container.innerHTML = `<div id="tradingview-widget" style="width: 100%; height: 100%;"></div>`;
-      
-      let tvSymbol = symbol;
-      if (symbol === 'SPY') tvSymbol = 'AMEX:SPY';
-      else if (symbol === 'BTCUSDT' || symbol === 'BTC') tvSymbol = 'BINANCE:BTCUSDT';
-      else if (symbol === 'ETHUSDT' || symbol === 'ETH') tvSymbol = 'BINANCE:ETHUSDT';
-      else if (['AAPL', 'MSFT', 'TSLA', 'NVDA', 'AMD', 'AMZN', 'GOOG', 'NFLX', 'META'].includes(symbol)) {
-        tvSymbol = 'NASDAQ:' + symbol;
-      }
-      
-      if (typeof TradingView !== 'undefined') {
-        const ctrls = document.querySelector('.chart-ctrls');
-        if (ctrls) ctrls.style.display = 'none'; // Iframe has its own controls
-        
-        tvWidget = new TradingView.widget({
-          "autosize": true,
-          "symbol": tvSymbol,
-          "interval": "D",
-          "timezone": "Etc/UTC",
-          "theme": "light",
-          "style": "1",
-          "locale": "en",
-          "enable_publishing": false,
-          "hide_side_toolbar": false,
-          "allow_symbol_change": true,
-          "container_id": "tradingview-widget"
-        });
+      if (activeTickerPoints && activeTickerPoints.length > 0) {
+        renderCanvasFallbackChart('chart-container', activeTickerPoints);
       } else {
-        const ctrls = document.querySelector('.chart-ctrls');
-        if (ctrls) ctrls.style.display = 'flex'; // Enable canvas fallback controls
-        
-        if (activeTickerPoints && activeTickerPoints.length > 0) {
-          renderCanvasFallbackChart('chart-container', activeTickerPoints);
-        } else {
-          container.innerHTML = `
-            <div style="height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--txt-sec); padding:16px; text-align:center;">
-              <strong>TradingView Widget Offline</strong>
-              <span style="font-size:12px; margin-top:4px;">Cannot load interactive iframe widget.</span>
-            </div>
-          `;
-        }
+        container.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--txt-sec); font-family: 'JetBrains Mono'; font-size: 12px;">No historical price points available for ${symbol}</div>`;
       }
     }
 
@@ -4427,6 +4447,9 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
       // 2. Lucide initialization
       lucide.createIcons();
 
+      // Initialize Playbook Scanner & Scorecard Cockpit
+      initPlaybookScannerUI();
+
       // 3. UI states
       updateAiStatusPill();
       detectLocalProxy().then(() => {
@@ -4596,6 +4619,222 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
       });
       window.addEventListener('click', (e) => { if (e.target === modal) hideModal(); });
     });
+
+    // Aether Playbook Scanner & Scorecard Cockpit Logic
+    let cachedScannerResults = [];
+    let activeSetupTab = "setup_12";
+
+    const playbookSetups = [
+      { id: "setup_1", name: "1. Gap and Go" },
+      { id: "setup_2", name: "2. Gap and Fade" },
+      { id: "setup_3", name: "3. Episodic Pivot" },
+      { id: "setup_4", name: "4. PM Vol Leader" },
+      { id: "setup_5", name: "5. VWAP Hold" },
+      { id: "setup_6", name: "6. Late Day Momentum" },
+      { id: "setup_7", name: "7. Inside Day (NR7)" },
+      { id: "setup_8", name: "8. VIX Spike Reversion" },
+      { id: "setup_9", name: "9. VCP Consolidation" },
+      { id: "setup_10", name: "10. 10/21 EMA Pullback" },
+      { id: "setup_11", name: "11. 50 SMA Bounce" },
+      { id: "setup_12", name: "12. Standard ORB" },
+      { id: "setup_13", name: "13. Blue Sky ATH" },
+      { id: "setup_14", name: "14. Stage 2 Reversal" },
+      { id: "setup_15", name: "15. PEAD Breakout" }
+    ];
+
+    function initPlaybookScannerUI() {
+      const tabsContainer = document.getElementById('setup-tabs-container');
+      if (!tabsContainer) return;
+
+      tabsContainer.innerHTML = playbookSetups.map(setup => {
+        return `
+          <button class="setup-tab-btn" data-setup-id="${setup.id}" onclick="selectSetupTab('${setup.id}')" style="padding: 8px 12px; font-size: 11px; text-align: left; background: transparent; border: none; border-bottom: 1px solid var(--border); color: var(--txt-sec); cursor: pointer; display: flex; align-items: center; justify-content: space-between; width: 100%; box-sizing: border-box;">
+            <span>${setup.name}</span>
+            <span class="badge" id="badge-${setup.id}" style="background: var(--border); color: var(--txt-sec); padding: 1px 4px; border-radius: 4px; font-size: 9px; display: none;">0</span>
+          </button>
+        `;
+      }).join('');
+
+      // Set default active styling
+      selectSetupTab(activeSetupTab);
+      
+      // Auto run scan on startup
+      triggerPlaybookScan();
+    }
+
+    function selectSetupTab(setupId) {
+      activeSetupTab = setupId;
+      
+      // Update active tab buttons style
+      const tabBtns = document.querySelectorAll('.setup-tab-btn');
+      tabBtns.forEach(btn => {
+        const id = btn.getAttribute('data-setup-id');
+        if (id === setupId) {
+          btn.style.background = 'var(--bg-card)';
+          btn.style.color = 'var(--accent)';
+          btn.style.fontWeight = 'bold';
+          btn.style.borderLeft = '3px solid var(--accent)';
+        } else {
+          btn.style.background = 'transparent';
+          btn.style.color = 'var(--txt-sec)';
+          btn.style.fontWeight = 'normal';
+          btn.style.borderLeft = 'none';
+        }
+      });
+
+      // Update active setup header
+      const setupObj = playbookSetups.find(s => s.id === setupId);
+      const titleEl = document.getElementById('active-setup-title');
+      if (titleEl && setupObj) {
+        titleEl.textContent = setupObj.name.toUpperCase();
+      }
+
+      renderSetupResults();
+    }
+
+    async function triggerPlaybookScan() {
+      const tableBody = document.getElementById('scanner-table-body');
+      if (tableBody) {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="5" style="padding: 30px; text-align: center; color: var(--txt-sec);">
+              <div style="display: inline-block; animation: spin 1s linear infinite; margin-right: 8px;">↻</div> Scanning playbook setups across watchlist...
+            </td>
+          </tr>
+        `;
+      }
+
+      try {
+        const res = await fetch('http://127.0.0.1:8080/api/scanner');
+        const data = await res.json();
+        if (data.success) {
+          cachedScannerResults = data.scans;
+          console.log("Cached scanner results:", cachedScannerResults);
+          
+          // Update badges
+          playbookSetups.forEach(setup => {
+            const scanObj = cachedScannerResults.find(s => s.setup_id === setup.id);
+            const count = scanObj ? scanObj.results.length : 0;
+            const badge = document.getElementById(`badge-${setup.id}`);
+            if (badge) {
+              badge.textContent = count;
+              badge.style.display = count > 0 ? 'inline-block' : 'none';
+              badge.style.background = count > 0 ? 'var(--accent)' : 'var(--border)';
+              badge.style.color = count > 0 ? '#000000' : 'var(--txt-sec)';
+            }
+          });
+
+          renderSetupResults();
+        }
+      } catch (err) {
+        console.warn("Scanner API call failed:", err);
+        if (tableBody) {
+          tableBody.innerHTML = `
+            <tr>
+              <td colspan="5" style="padding: 30px; text-align: center; color: #EF4444;">
+                Offline: Unable to reach local algo-engine server on port 8080. Make sure start_indicators_server.bat is running.
+              </td>
+            </tr>
+          `;
+        }
+      }
+    }
+
+    function renderSetupResults() {
+      const tableBody = document.getElementById('scanner-table-body');
+      if (!tableBody) return;
+
+      const activeScan = cachedScannerResults.find(s => s.setup_id === activeSetupTab);
+      if (!activeScan || activeScan.results.length === 0) {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="5" style="padding: 30px; text-align: center; color: var(--txt-sec);">
+              No watchlist triggers detected for this setup.
+            </td>
+          </tr>
+        `;
+        clearScorecardDisplay();
+        return;
+      }
+
+      tableBody.innerHTML = activeScan.results.map((result, idx) => {
+        return `
+          <tr class="scanner-row" onclick="viewDetailedScorecard('${activeSetupTab}', ${idx})" style="border-bottom: 1px solid var(--border); cursor: pointer; hover: background: var(--bg-sec);">
+            <td style="padding: 8px; font-weight: bold; color: var(--txt-prim);">${result.symbol}</td>
+            <td style="padding: 8px; color: var(--txt-sec);">${result.timestamp}</td>
+            <td style="padding: 8px; font-weight: bold; color: var(--accent);">${result.score.toFixed(1)} / 10.0</td>
+            <td style="padding: 8px;">
+              <span style="color: ${result.score >= 9.0 ? '#10B981' : result.score >= 7.0 ? '#F59E0B' : '#6B7280'}; font-weight: bold;">
+                ${result.conviction}
+              </span>
+            </td>
+            <td style="padding: 8px; text-align: right;">
+              <button class="btn-sec" onclick="loadTicker('${result.symbol}'); event.stopPropagation();" style="padding: 2px 6px; font-size: 10px;">VIEW CHART</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      // Auto-load detailed scorecard of the first trigger row
+      viewDetailedScorecard(activeSetupTab, 0);
+    }
+
+    function viewDetailedScorecard(setupId, index) {
+      const activeScan = cachedScannerResults.find(s => s.setup_id === setupId);
+      if (!activeScan || !activeScan.results[index]) return;
+
+      const result = activeScan.results[index];
+      
+      // Update scorecard displays
+      document.getElementById('scorecard-large-score').textContent = `${result.score.toFixed(1)} / 10.0`;
+      
+      const convEl = document.getElementById('scorecard-conviction-tier');
+      convEl.textContent = result.conviction;
+      convEl.style.color = result.score >= 9.0 ? '#10B981' : result.score >= 7.0 ? '#F59E0B' : '#6B7280';
+      
+      const factorsContainer = document.getElementById('scorecard-factors-container');
+      if (factorsContainer) {
+        // Dynamic factors list based on the scorecard types
+        factorsContainer.innerHTML = Object.entries(result.score_breakdown).map(([factor, pts]) => {
+          const factorName = factor.replace('_', ' ').toUpperCase();
+          const percent = (pts / 3.0) * 100; // factor max is usually 3.0
+          return `
+            <div style="margin-bottom: 6px;">
+              <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 2px;">
+                <span style="color: var(--txt-prim); font-weight: bold;">${factorName}</span>
+                <span style="color: var(--accent); font-weight: bold;">+${pts.toFixed(1)} pts</span>
+              </div>
+              <div style="width: 100%; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;">
+                <div style="width: ${Math.max(0, Math.min(100, percent))}%; height: 100%; background: var(--accent);"></div>
+              </div>
+            </div>
+          `;
+        }).join('') + `
+          <div style="border-top: 1px dashed var(--border); margin-top: 8px; padding-top: 6px; font-size: 10px;">
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--txt-sec);">Account Risk (R):</span>
+              <span style="color: var(--txt-prim); font-weight: bold;">${result.risk_pct.toFixed(1)}%</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-top: 2px; flex-wrap: wrap; gap: 4px;">
+              <span style="color: var(--txt-sec);">Base Metrics:</span>
+              <span style="color: var(--accent); font-weight: bold;">
+                ${Object.entries(result.metrics).map(([k, v]) => `${k.toUpperCase()}:${typeof v === 'number' ? v.toFixed(2) : v}`).join(', ')}
+              </span>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function clearScorecardDisplay() {
+      document.getElementById('scorecard-large-score').textContent = `- / 10.0`;
+      document.getElementById('scorecard-conviction-tier').textContent = `-`;
+      document.getElementById('scorecard-factors-container').innerHTML = `
+        <div style="color: var(--txt-sec); font-style: italic; text-align: center; margin-top: 20px;">
+          Select a scan result to view detailed rubric scores.
+        </div>
+      `;
+    }
   </script>
 </body>
 </html>

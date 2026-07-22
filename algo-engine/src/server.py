@@ -12,6 +12,7 @@ from calculations.gex import find_gex_key_levels, get_gamma_regime
 from calculations.indicators import calculate_smas, find_unmitigated_gaps, find_unmitigated_fvgs
 from calculations.backtester import PlaybookBacktester
 from calculations.optimizer import SetupParameterOptimizer
+from calculations.scanner import PlaybookScanner
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("AetherServer")
@@ -224,6 +225,21 @@ def get_optimization(
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error", "Optimization failed."))
     return res
+
+
+@app.get("/api/scanner")
+def get_scanner_results():
+    """
+    Scans the watchlist for all 15 playbook setups and returns active triggers.
+    """
+    logger.info("API: Executing watchlist scan for all 15 setups...")
+    scanner = PlaybookScanner()
+    try:
+        res = scanner.scan_all_setups()
+        return {"success": True, "scans": res}
+    except Exception as e:
+        logger.error(f"Scanner execution failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
