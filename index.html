@@ -1411,7 +1411,25 @@
       const closes = points.map(p => p.close);
       const minPrice = Math.min(...closes);
       const maxPrice = Math.max(...closes);
-      const range = (maxPrice - minPrice) || 1;
+      
+      let chartMin = minPrice;
+      let chartMax = maxPrice;
+      
+      if (activePlaybookIndicators && activePlaybookIndicators.symbol === activeTicker) {
+        const gex = activePlaybookIndicators.gex;
+        const buffer = (maxPrice - minPrice) * 0.25; // 25% buffer
+        
+        // If Call Wall is close to maxPrice, expand chartMax to show it
+        if (gex.call_wall && gex.call_wall > maxPrice && gex.call_wall < maxPrice + buffer) {
+          chartMax = gex.call_wall;
+        }
+        // If Put Wall is close to minPrice, expand chartMin to show it
+        if (gex.put_wall && gex.put_wall < minPrice && gex.put_wall > minPrice - buffer) {
+          chartMin = gex.put_wall;
+        }
+      }
+      
+      const range = (chartMax - chartMin) || 1;
 
       ctx.strokeStyle = '#E8E8EC'; ctx.lineWidth = 1;
       for (let i = 1; i < 4; i++) {
@@ -1420,7 +1438,7 @@
 
       ctx.strokeStyle = '#6366F1'; ctx.lineWidth = 2; ctx.beginPath();
       const getX = (idx) => (idx / (points.length - 1)) * (width - 40) + 10;
-      const getY = (val) => height - 20 - ((val - minPrice) / range) * (height - 40);
+      const getY = (val) => height - 20 - ((val - chartMin) / range) * (height - 40);
 
       points.forEach((p, idx) => {
         const x = getX(idx), y = getY(p.close);
@@ -1436,9 +1454,46 @@
       grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
       ctx.fillStyle = grad; ctx.fill();
 
+      // Draw horizontal GEX walls
+      if (activePlaybookIndicators && activePlaybookIndicators.symbol === activeTicker) {
+        const gex = activePlaybookIndicators.gex;
+        const gexLines = [
+          { val: gex.call_wall, label: 'Call Wall', color: '#10B981' },
+          { val: gex.put_wall, label: 'Put Wall', color: '#EF4444' },
+          { val: gex.gex_flip, label: 'GEX Flip', color: '#F59E0B' }
+        ];
+
+        gexLines.forEach(line => {
+          if (line.val && line.val >= chartMin && line.val <= chartMax) {
+            const y = getY(line.val);
+            ctx.strokeStyle = line.color;
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([5, 3]);
+            ctx.beginPath();
+            ctx.moveTo(10, y);
+            ctx.lineTo(width - 55, y);
+            ctx.stroke();
+            ctx.setLineDash([]); // Reset
+            
+            // Draw label text next to line
+            ctx.font = '9px JetBrains Mono';
+            ctx.fillStyle = line.color;
+            ctx.textAlign = 'left';
+            ctx.fillText(`${line.label}: $${line.val.toFixed(2)}`, 15, y - 4);
+          }
+        });
+
+        // Overlay RVOL in the top right
+        const rvol = activePlaybookIndicators.rvol;
+        ctx.font = '10px JetBrains Mono';
+        ctx.fillStyle = '#9CA3AF';
+        ctx.textAlign = 'right';
+        ctx.fillText(`RVOL TS: ${rvol.rvol_ts.toFixed(2)}x | RVOL RM: ${rvol.rvol_rm.toFixed(2)}x`, width - 5, 28);
+      }
+
       ctx.font = '10px JetBrains Mono'; ctx.fillStyle = '#6B6B6B'; ctx.textAlign = 'right';
-      ctx.fillText(maxPrice.toFixed(2), width - 5, 15);
-      ctx.fillText(minPrice.toFixed(2), width - 5, height - 5);
+      ctx.fillText(chartMax.toFixed(2), width - 5, 15);
+      ctx.fillText(chartMin.toFixed(2), width - 5, height - 5);
     }
 
     // Active Stock Details Updates
@@ -1484,6 +1539,22 @@
       updateTradeTabPositionText();
     }
 
+    let activePlaybookIndicators = null;
+
+    async function loadPlaybookIndicators(symbol) {
+      activePlaybookIndicators = null;
+      try {
+        const response = await fetch(`http://127.0.0.1:8000/api/indicators?symbol=${symbol}`);
+        const data = await response.json();
+        if (data.success) {
+          activePlaybookIndicators = data;
+          console.log("Loaded Aether playbook indicators:", data);
+        }
+      } catch (err) {
+        console.warn("Aether local algo-engine server offline or unable to fetch indicators:", err);
+      }
+    }
+
     async function loadTicker(symbol) {
       activeTicker = symbol.toUpperCase();
       document.getElementById('chart-loading').style.display = 'flex';
@@ -1504,6 +1575,7 @@
         globalQuotes[activeTicker] = { price: activeTickerQuote.price, prevClose: activeTickerQuote.prevClose };
 
         updateActiveTickerUI(data.meta);
+        await loadPlaybookIndicators(activeTicker);
         initTradingViewWidget(activeTicker);
 
         // Auto-populate Google News search input and reload if active
