@@ -46,13 +46,15 @@ The application is implemented as a single-page, serverless terminal in [index.h
 
 ## 3. Custom Quantitative Scrapers & Fallback Engines
 
-### Premarket Gapper Catalyst Fallback
-To eliminate the red `"Catalyst lookup failed."` messages caused by Gemini API rate limits (HTTP 429), the catalyst scraper uses a hierarchical lookup flow:
-1. **Finnhub News:** If a Finnhub API Key is configured, pulls company news. If the newest headline is **less than 24 hours old**, renders it directly and skips Gemini.
-2. **Yahoo News RSS:** If no Finnhub headline is found, queries Yahoo News RSS via the proxy. Renders the headline if it is **less than 24 hours old**.
-3. **Benzinga Scraper:** If still empty, parses the Benzinga quote page, using a DOM parser to select headings and news anchor links.
-4. **Gemini Fallback:** If news text is present but no single direct headline was found <24h, calls Gemini to synthesize a 1-sentence summary (applying a 1.5s delay only if this path is hit).
-5. **Neutral Default:** If all fetches fail or return empty, displays a benign `<span style="color:var(--txt-sec);">No catalyst.</span>` in grey.
+### Premarket Gapper Catalyst Flow (Optimized Batch AI)
+To achieve fast, reliable, and token-efficient catalyst loading for all 10 gapper symbols, the scanner runs a hybrid pipeline:
+1. **Gemini Batch AI Query:** If a Gemini API Key is configured, the scanner performs a **single batch query** to `gemini-3.6-flash` with Google Search Grounding for all 10 symbols at once, returning a JSON mapping of symbols to precise catalyst summaries (mentioning if they are rising/falling).
+2. **Fallback Hierarchical Scraper:** If the batch query fails, is rate-limited, or no key is present, it falls back to the sequential local parser loop:
+   - **Google News RSS:** Queries Google News RSS via local proxy. If a headline under 24 hours old is found, renders it directly.
+   - **Yahoo News RSS:** Queries Yahoo News RSS via local proxy. If a headline under 24 hours old is found, renders it.
+   - **Benzinga Scraper:** Parses Benzinga quote pages to extract recent headlines.
+   - **Gemini Fallback:** Calls Gemini to synthesize a 1-sentence summary of the accumulated text.
+3. **Neutral Default:** Displays `<span style="color:var(--txt-sec);">No catalyst.</span>` in grey if all paths return empty.
 
 ### Weekly Fund Flows Z-Score & Turning Point Index
 To replace the hardcoded `"Unavailable"` flows text in direct scraping mode, we calculate a **Weekly ETF Money Flow Proxy** using Yahoo Finance chart data for **SPY** (Equity), **TLT** (Bond), and **BIL** (Cash):
