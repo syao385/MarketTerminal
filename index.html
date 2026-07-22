@@ -1649,7 +1649,7 @@
       const hud = document.getElementById('playbook-hud');
       if (hud) hud.style.display = 'none';
       try {
-        const response = await fetch(`http://127.0.0.1:8000/api/indicators?symbol=${symbol}`);
+        const response = await fetch(`http://127.0.0.1:8080/api/indicators?symbol=${symbol}`);
         const data = await response.json();
         if (data.success) {
           activePlaybookIndicators = data;
