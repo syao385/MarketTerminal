@@ -111,4 +111,11 @@ Executing the validator script on `NVDA` for the `Standard ORB (Setup 12)` over 
 - Connected the frontend cockpit to the newly exposed `/api/scanner` endpoint on the local server (`port 8080`), enabling automated scans across your liquid watchlist (`AAPL`, `NVDA`, `TSLA`, `MSFT`, `SPY`, `AMZN`, `GOOG`, `AMD`, `MU`, `SMCI`).
 - Configured trigger list selections to automatically load the ticker's historical candlestick data onto the main chart container.
 
+### D. Advanced Fallback Indicators & Scaling Correction
+- **On-the-Fly Indicators Engine:** Programmed frontend calculations for SMA 20, SMA 50, SMA 200, unmitigated price gaps, and 3-candle Fair Value Gaps (FVG) directly in JavaScript on the canvas chart. If the local algo-engine is offline, or if options/intraday queries fail, the chart still displays full indicator curves, gaps, and FVG boxes calculated directly from the downloaded price data.
+- **Boundaries Math Correction:** Fixed boundary scaling code to guarantee GEX lines (Call/Put Walls) are never clipped or omitted from view. The price scale automatically expands by 2% to encompass these levels if they sit outside the candle highs/lows.
+- **Detailed Y-Axis Dividers:** Expanded the Y-axis label array from two (Max/Min) to **five distinct price levels**, aligning exactly with the horizontal grid division lines.
+- **Scanner Cockpit Click Synchronization:** Linked cockpit trigger table row clicks to automatically execute `loadTicker()` alongside updating scorecard details, keeping price chart overlays and scorecards in sync.
+
+
 
