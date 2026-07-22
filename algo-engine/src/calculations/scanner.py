@@ -5,12 +5,12 @@ import numpy as np
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 
-from calculations.scorecards import calculate_mos_b, calculate_mos_a, calculate_mos_p
+from calculations.scorecards import calculate_mos_b, calculate_mos_a, calculate_mos_p, get_risk_allocation
 from calculations.indicators import calculate_smas
 
 logger = logging.getLogger("AetherScanner")
 
-WATCHLIST = ["AAPL", "NVDA", "TSLA", "MSFT", "SPY", "AMZN", "GOOG", "AMD", "MU", "SMCI"]
+WATCHLIST = ["AAPL", "NVDA", "TSLA", "MSFT", "SPY", "QQQ", "AMZN", "GOOG", "AMD", "MU", "SMCI"]
 
 class PlaybookScanner:
     def __init__(self):
