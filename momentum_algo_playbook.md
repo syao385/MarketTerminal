@@ -153,3 +153,166 @@ def monitor_episodic_pivot(ticker):
         # Hold position for multiple days; trail with 9-day EMA
         manage_swing_trade(ticker, entry_price, stop_loss)
 ```
+
+### D. Algorithmic Setup 4: Red-to-Green (R2G) Intraday Reversal
+```python
+# Concept: A stock opens below yesterday's close (red) but buying pressure pushes it green. 
+# The crossing point of yesterday's close triggers high-conviction algo & retail buying.
+def evaluate_red_to_green(ticker):
+    prev_close = get_yesterday_close(ticker)
+    open_price = get_today_open(ticker)
+    
+    if open_price < prev_close:
+        monitor_r2g_cross(ticker, prev_close)
+
+def monitor_r2g_cross(ticker, prev_close):
+    price = get_live_price(ticker)
+    if price > prev_close:
+        # Verify aggressive buyers are leading
+        if get_cumulative_delta_trend(ticker) == "UP" and get_rvol(ticker) > 1.5:
+            entry_price = market_buy(ticker, qty=calculate_standard_qty(ticker))
+            stop_loss = get_today_lod(ticker)
+            take_profit = get_premarket_high(ticker)
+            
+            manage_long_trade(ticker, entry_price, stop_loss, take_profit)
+```
+
+### E. Algorithmic Setup 5: VWAP Institutional Hold & Re-Entry
+```python
+# Concept: Institutions execute orders relative to VWAP. In a strong trend, the first pullback 
+# to VWAP that holds (indicated by footprint absorption and delta expansion) is a low-risk long entry.
+def evaluate_vwap_hold(ticker):
+    if is_in_strong_upward_trend(ticker):
+        monitor_vwap_pullback(ticker)
+
+def monitor_vwap_pullback(ticker):
+    vwap = get_current_vwap(ticker)
+    price = get_live_price(ticker)
+    
+    # Check if price touches VWAP within 0.1%
+    if abs(price - vwap) / vwap <= 0.001:
+        # Check for passive absorption on DOM (large buy limit blocks stacking)
+        if get_resting_bid_depth_at_vwap(ticker) > get_average_bid_depth(ticker) * 2:
+            # Wait for first 1-minute close green away from VWAP
+            bar = get_candle(ticker, interval="1m", index=0)
+            if bar.close > vwap and get_cumulative_delta_trend(ticker) == "UP":
+                entry_price = market_buy(ticker, qty=calculate_standard_qty(ticker))
+                stop_loss = vwap - 0.05
+                take_profit = get_high_of_day(ticker)
+                
+                manage_long_trade(ticker, entry_price, stop_loss, take_profit)
+```
+
+### F. Algorithmic Setup 6: Gamma Squeeze / Short Squeeze Sweep
+```python
+# Concept: Heavily shorted stocks or stocks with high call option demand crossing the GEX Flip level. 
+# Dealer short hedges accelerate, causing rapid vertical price expansion.
+def evaluate_gamma_squeeze(ticker):
+    short_interest = get_short_interest_percentage(ticker)
+    gex_flip = get_gex_flip_level(ticker)
+    price = get_live_price(ticker)
+    
+    # Target heavily shorted stocks crossing GEX Flip into negative gamma
+    if (short_interest > 0.15 or has_high_option_volume(ticker)) and price > gex_flip:
+        if get_delta_acceleration_rate(ticker) > 2.0: # Delta velocity spike
+            # Execute Long Sweep
+            entry_price = market_buy(ticker, qty=calculate_squeeze_qty(ticker))
+            stop_loss = gex_flip - 0.10
+            take_profit = calculate_standard_deviation_target(ticker, std=2)
+            
+            manage_long_trade(ticker, entry_price, stop_loss, take_profit)
+```
+
+## 5. Multi-Day Swing Momentum Setups
+
+These setups focus on intermediate-term (2-to-20 day) holding periods. Institutions trade them because they represent systematic block accumulation over time rather than simple intraday spikes.
+
+### G. Algorithmic Setup 7: Day 2/3 Momentum Continuation
+```python
+# Concept: Institutions cannot complete large block orders in a single day. 
+# A Day 1 Episodic Pivot (EP) is followed by Day 2/3 buying as execution algorithms 
+# (VWAP/POV) resume their accumulation programs.
+def evaluate_day2_continuation(ticker):
+    # Check if yesterday was a Day 1 Episodic Pivot
+    if was_episodic_pivot(ticker, days_ago=1):
+        day1_high = get_historical_high(ticker, days_ago=1)
+        day1_close = get_historical_close(ticker, days_ago=1)
+        
+        # Monitor for breakout above Day 1 High
+        monitor_day2_breakout(ticker, day1_high, day1_close)
+
+def monitor_day2_breakout(ticker, day1_high, day1_close):
+    price = get_live_price(ticker)
+    
+    # Trigger if price breaks above Day 1 High on expanding morning volume
+    if price > day1_high and get_morning_volume(ticker) > get_average_morning_volume(ticker) * 1.5:
+        # Check that Day 2 did not open with an excessive gap (> 4% from Day 1 Close)
+        if (get_today_open(ticker) - day1_close) / day1_close < 0.04:
+            entry_price = market_buy(ticker, qty=calculate_swing_qty(ticker))
+            stop_loss = get_today_lod(ticker)
+            
+            # Trail with Daily 9-EMA for multi-day continuation
+            manage_swing_trade(ticker, entry_price, stop_loss)
+```
+
+### H. Algorithmic Setup 8: High Tight Flag (HTF)
+```python
+# Concept: Extreme momentum setup (O'Neil/CANSLIM). A stock doubles in price in under 4-8 weeks, 
+# then consolidates sideways within a tight range, showing that institutions refuse to sell.
+def evaluate_high_tight_flag(ticker):
+    # Step 1: Check for 100%+ gain in last 30 trading days
+    lowest_30d = get_lowest_price(ticker, period=30)
+    highest_30d = get_highest_price(ticker, period=30)
+    
+    if (highest_30d - lowest_30d) / lowest_30d >= 1.0:
+        # Step 2: Verify consolidation depth is <= 25% from the high
+        consol_low = get_lowest_price_since(ticker, start_date=get_date_of_high(ticker))
+        consol_depth = (highest_30d - consol_low) / highest_30d
+        
+        if consol_depth <= 0.25:
+            # Step 3: Check consolidation duration (5 to 15 days)
+            consol_days = get_days_since_high(ticker)
+            if 5 <= consol_days <= 15:
+                monitor_htf_breakout(ticker, highest_30d)
+
+def monitor_htf_breakout(ticker, breakout_level):
+    price = get_live_price(ticker)
+    
+    # Enter when price breaks above the flag high on volume > 2x 20-day average ADV
+    if price > breakout_level and get_projected_daily_volume(ticker) > get_30d_adv(ticker) * 2.0:
+        entry_price = market_buy(ticker, qty=calculate_swing_qty(ticker))
+        stop_loss = get_htf_consolidation_low(ticker)
+        
+        # Exit on momentum exhaustion / trend-line break
+        manage_swing_trade(ticker, entry_price, stop_loss)
+```
+
+### I. Algorithmic Setup 9: Volatility Contraction Pattern (VCP) & Cup and Handle Pivot
+```python
+# Concept: Developed by Mark Minervini, VCP represents systematic institutional absorption 
+# of overhead supply. As sellers dry up, price volatility contracts (tighter waves).
+# The breakout above the final contraction (the 'cheat' or pivot) launches the next leg.
+def evaluate_vcp_setup(ticker):
+    # Step 1: Stock must be in a primary uptrend (Price > 150-day and 200-day EMA)
+    if is_in_stage_2_uptrend(ticker):
+        # Step 2: Measure contractions (waves) in price history
+        waves = calculate_volatility_contractions(ticker) # e.g. [24%, 12%, 5%, 2%]
+        
+        if len(waves) >= 2 and is_contracting(waves):
+            # Step 3: Check for volume dry-up on the final contraction (Volume < 50% of ADV)
+            if get_current_wave_volume(ticker) < get_30d_adv(ticker) * 0.5:
+                pivot_price = get_vcp_pivot_level(ticker)
+                monitor_vcp_breakout(ticker, pivot_price)
+
+def monitor_vcp_breakout(ticker, pivot_price):
+    price = get_live_price(ticker)
+    
+    # Enter when price breaks above pivot line on volume > 2x 20-day average ADV
+    if price > pivot_price and get_projected_daily_volume(ticker) > get_30d_adv(ticker) * 2.0:
+        entry_price = market_buy(ticker, qty=calculate_swing_qty(ticker))
+        stop_loss = get_last_contraction_low(ticker)
+        
+        manage_swing_trade(ticker, entry_price, stop_loss)
+```
+
+
