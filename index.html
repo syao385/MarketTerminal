@@ -671,9 +671,11 @@
         <div class="chart-hdr">
           <span class="chart-title">INTERACTIVE CHART</span>
           <div class="chart-ctrls">
-            <div class="ctrl-grp">
+            <div class="ctrl-grp" id="timeframe-selector">
               <button class="ctrl-btn active" id="tf-1d-btn" onclick="changeTimeframe('1d')">1D</button>
-              <button class="ctrl-btn" id="tf-1m-btn" onclick="changeTimeframe('1mo')">1M</button>
+              <button class="ctrl-btn" id="tf-1h-btn" onclick="changeTimeframe('1h')">1H</button>
+              <button class="ctrl-btn" id="tf-5m-btn" onclick="changeTimeframe('5m')">5M</button>
+              <button class="ctrl-btn" id="tf-1m-btn" onclick="changeTimeframe('1m')">1M</button>
             </div>
             <div class="ctrl-grp">
               <button class="ctrl-btn active" id="style-line-btn" onclick="changeChartStyle('line')">LINE</button>
@@ -684,17 +686,17 @@
         <div class="chart-wrap">
           <div id="chart-container" style="width: 100%; height: 100%; position: relative;"></div>
           <!-- Aether Playbook Indicators HUD Overlay -->
-          <div id="playbook-hud" style="position: absolute; top: 10px; left: 10px; z-index: 5; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--txt-prim); display: none; pointer-events: none; flex-direction: column; gap: 4px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);">
-            <div style="font-weight: bold; text-transform: uppercase; border-bottom: 1px solid var(--border); padding-bottom: 2px; margin-bottom: 2px; display: flex; justify-content: space-between; gap: 20px;">
+          <div id="playbook-hud" style="position: absolute; top: 10px; left: 10px; z-index: 5; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(4px); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 8px 12px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #FFFFFF; display: none; pointer-events: none; flex-direction: column; gap: 4px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);">
+            <div style="font-weight: bold; text-transform: uppercase; border-bottom: 1px solid rgba(255, 255, 255, 0.15); padding-bottom: 2px; margin-bottom: 4px; display: flex; justify-content: space-between; gap: 20px;">
               <span>Aether Playbook</span>
-              <span id="hud-regime" style="color: var(--success);">-</span>
+              <span id="hud-regime" style="color: #10B981;">-</span>
             </div>
-            <div>Call Wall: <span id="hud-call-wall" style="color: #10B981;">-</span></div>
-            <div>Put Wall: <span id="hud-put-wall" style="color: #EF4444;">-</span></div>
-            <div>GEX Flip: <span id="hud-gex-flip" style="color: #F59E0B;">-</span></div>
-            <div style="border-top: 1px solid var(--border); margin-top: 2px; padding-top: 2px; display: flex; gap: 10px;">
-              <span>RVOL TS: <span id="hud-rvol-ts" style="color: var(--txt-sec);">-</span></span>
-              <span>RVOL RM: <span id="hud-rvol-rm" style="color: var(--txt-sec);">-</span></span>
+            <div style="color: #E2E8F0;">Call Wall: <span id="hud-call-wall" style="color: #10B981; font-weight: bold;">-</span></div>
+            <div style="color: #E2E8F0;">Put Wall: <span id="hud-put-wall" style="color: #EF4444; font-weight: bold;">-</span></div>
+            <div style="color: #E2E8F0;">GEX Flip: <span id="hud-gex-flip" style="color: #F59E0B; font-weight: bold;">-</span></div>
+            <div style="border-top: 1px solid rgba(255, 255, 255, 0.15); margin-top: 4px; padding-top: 4px; display: flex; gap: 10px; color: #E2E8F0;">
+              <span>RVOL TS: <span id="hud-rvol-ts" style="color: #FFFFFF; font-weight: bold;">-</span></span>
+              <span>RVOL RM: <span id="hud-rvol-rm" style="color: #FFFFFF; font-weight: bold;">-</span></span>
             </div>
           </div>
           <div id="chart-loading" class="chart-overlay" style="display: none;">
@@ -1018,7 +1020,7 @@
     let watchlist = ['AAPL', 'NVDA', 'TSLA', 'MSFT', 'SPY', 'AMZN', 'GOOG', 'AMD', 'MU', 'BTC', 'ETH'];
     let tradeSide = 'BUY';
     let currentRange = '1d';
-    let currentChartMode = 'line';
+    let currentChartMode = 'candle';
     let chartInstance = null; // Canvas fallback chart context if tv.js is offline
     
     // News Caching & Analytics State
@@ -1213,8 +1215,23 @@
 
     // API Integration: Fetch Yahoo Finance Quote (Direct Fetch)
     async function fetchYahooFinanceData(ticker, range = '1d') {
-      const interval = range === '1d' ? '5m' : '1d';
-      const url = `https://query2.finance.yahoo.com/v7/finance/chart/${ticker}?interval=${interval}&range=${range}`;
+      let interval = '1d';
+      let requestRange = range;
+      if (range === '1d') {
+        interval = '5m';
+      } else if (range === '1h') {
+        requestRange = '5d';
+        interval = '1h';
+      } else if (range === '5m') {
+        requestRange = '1d';
+        interval = '5m';
+      } else if (range === '1m') {
+        requestRange = '1d';
+        interval = '1m';
+      } else {
+        interval = '1d';
+      }
+      const url = `https://query2.finance.yahoo.com/v7/finance/chart/${ticker}?interval=${interval}&range=${requestRange}`;
 
       // 0. Primary fallback: If Finnhub is configured, fetch quote from Finnhub directly (native CORS, 100% reliable)
       const finnhubKey = localStorage.getItem('finnhub_api_key');
@@ -1644,12 +1661,12 @@
 
     let activePlaybookIndicators = null;
 
-    async function loadPlaybookIndicators(symbol) {
+    async function loadPlaybookIndicators(symbol, timeframe) {
       activePlaybookIndicators = null;
       const hud = document.getElementById('playbook-hud');
       if (hud) hud.style.display = 'none';
       try {
-        const response = await fetch(`http://127.0.0.1:8080/api/indicators?symbol=${symbol}`);
+        const response = await fetch(`http://127.0.0.1:8080/api/indicators?symbol=${symbol}&timeframe=${timeframe}`);
         const data = await response.json();
         if (data.success) {
           activePlaybookIndicators = data;
@@ -1697,7 +1714,10 @@
         globalQuotes[activeTicker] = { price: activeTickerQuote.price, prevClose: activeTickerQuote.prevClose };
 
         updateActiveTickerUI(data.meta);
-        await loadPlaybookIndicators(activeTicker);
+        await loadPlaybookIndicators(activeTicker, currentRange);
+        if (activePlaybookIndicators && activePlaybookIndicators.points) {
+          activeTickerPoints = activePlaybookIndicators.points;
+        }
         initTradingViewWidget(activeTicker);
 
         // Auto-populate Google News search input and reload if active
@@ -1731,7 +1751,9 @@
     function changeTimeframe(range) {
       currentRange = range;
       document.getElementById('tf-1d-btn').classList.toggle('active', range === '1d');
-      document.getElementById('tf-1m-btn').classList.toggle('active', range === '1mo');
+      const tf1h = document.getElementById('tf-1h-btn'); if (tf1h) tf1h.classList.toggle('active', range === '1h');
+      const tf5m = document.getElementById('tf-5m-btn'); if (tf5m) tf5m.classList.toggle('active', range === '5m');
+      const tf1m = document.getElementById('tf-1m-btn'); if (tf1m) tf1m.classList.toggle('active', range === '1m');
       loadTicker(activeTicker);
     }
 

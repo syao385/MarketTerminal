@@ -25,25 +25,42 @@ app.add_middleware(
 )
 
 @app.get("/api/indicators")
-def get_indicators(symbol: str = Query(..., description="Stock symbol (e.g. SPY, SMCI)")):
+def get_indicators(
+    symbol: str = Query(..., description="Stock symbol (e.g. SPY, SMCI)"),
+    timeframe: str = Query("1d", description="Timeframe resolution (1d, 1h, 5m, 1m)")
+):
     """
-    Computes GEX, RVOL, SMAs, unmitigated gaps, and FVGs for the requested symbol.
+    Computes GEX, RVOL, SMAs, unmitigated gaps, and FVGs for the requested symbol and timeframe.
     """
-    logger.info(f"Computing indicators for {symbol}...")
+    logger.info(f"Computing indicators for {symbol} on {timeframe} timeframe...")
     symbol = symbol.upper().strip()
+    timeframe = timeframe.lower().strip()
+    
+    # Map timeframe to yfinance period/interval config
+    timeframe_map = {
+        "1d": {"period": "1y", "interval": "1d", "tail": 60},
+        "1h": {"period": "60d", "interval": "1h", "tail": 60},
+        "5m": {"period": "5d", "interval": "5m", "tail": 60},
+        "1m": {"period": "1d", "interval": "1m", "tail": 100}
+    }
+    
+    tf_conf = timeframe_map.get(timeframe, {"period": "1y", "interval": "1d", "tail": 60})
     
     try:
         ticker = yf.Ticker(symbol)
         
-        # Download 250 trading days (approx 1 year) of daily candles for SMA 200 & gaps
-        history = ticker.history(period="1y")
+        # Download historical candles
+        history = ticker.history(period=tf_conf["period"], interval=tf_conf["interval"])
         if history.empty:
             return {"success": False, "error": f"No price history found for {symbol}"}
             
         spot = float(history.iloc[-1]["Close"])
-        adv = float(history["Volume"].mean())
         
-        # Calculate SMAs, Gaps, and FVGs on full daily history
+        # Calculate daily Average Daily Volume (always daily for PM/ADV check)
+        daily_hist = ticker.history(period="30d")
+        adv = float(daily_hist["Volume"].mean()) if not daily_hist.empty else 1.0
+        
+        # Calculate SMAs, Gaps, and FVGs on timeframe history
         history = calculate_smas(history)
         unmitigated_gaps = find_unmitigated_gaps(history)
         unmitigated_fvgs = find_unmitigated_fvgs(history)
@@ -71,21 +88,21 @@ def get_indicators(symbol: str = Query(..., description="Stock symbol (e.g. SPY,
             gex_data = gex_levels
 
         # 2. RVOL Calculations (time-slice check against past 2 days intraday)
-        hist_1d = ticker.history(period="2d", interval="15m")
+        hist_2d = ticker.history(period="2d", interval="15m")
         rvol_ts = 1.0
         rvol_rm = 1.0
-        if not hist_1d.empty and len(hist_1d) >= 2:
-            today_cumulative = float(hist_1d["Volume"].iloc[-1])
-            yesterday_cumulative = float(hist_1d["Volume"].iloc[0])
+        if not hist_2d.empty and len(hist_2d) >= 2:
+            today_cumulative = float(hist_2d["Volume"].iloc[-1])
+            yesterday_cumulative = float(hist_2d["Volume"].iloc[0])
             rvol_ts = float(today_cumulative / (yesterday_cumulative if yesterday_cumulative > 0 else 1.0))
             rvol_rm = rvol_ts
             
-        # Format the points dataset to send to frontend (limit to last 60 days to keep chart clean)
-        history_subset = history.tail(60)
+        # Format the points dataset to send to frontend
+        history_subset = history.tail(tf_conf["tail"])
         points = []
         for date, row in history_subset.iterrows():
             points.append({
-                "date": date.strftime('%Y-%m-%d'),
+                "date": date.strftime('%Y-%m-%d %H:%M') if timeframe != "1d" else date.strftime('%Y-%m-%d'),
                 "open": float(row["Open"]),
                 "high": float(row["High"]),
                 "low": float(row["Low"]),
@@ -96,13 +113,12 @@ def get_indicators(symbol: str = Query(..., description="Stock symbol (e.g. SPY,
                 "sma_200": float(row["sma_200"]) if not pd.isna(row["sma_200"]) else None
             })
             
-        # Adjust gap and FVG indices relative to the returned 60-day subset
-        # So the frontend can draw them at the correct historical x-axis positions
-        start_date_60 = history_subset.index[0]
+        # Adjust gap and FVG indices relative to the returned subset
+        start_date_subset = history_subset.index[0]
         visible_gaps = []
         for g in unmitigated_gaps:
             g_date = history.index[g["start_idx"]]
-            if g_date >= start_date_60:
+            if g_date >= start_date_subset:
                 visible_idx = history_subset.index.get_loc(g_date)
                 g_copy = g.copy()
                 g_copy["start_idx"] = visible_idx
@@ -111,7 +127,7 @@ def get_indicators(symbol: str = Query(..., description="Stock symbol (e.g. SPY,
         visible_fvgs = []
         for f in unmitigated_fvgs:
             f_date = history.index[f["start_idx"]]
-            if f_date >= start_date_60:
+            if f_date >= start_date_subset:
                 visible_idx = history_subset.index.get_loc(f_date)
                 f_copy = f.copy()
                 f_copy["start_idx"] = visible_idx
@@ -125,7 +141,7 @@ def get_indicators(symbol: str = Query(..., description="Stock symbol (e.g. SPY,
             "rvol": {
                 "rvol_ts": rvol_ts,
                 "rvol_rm": rvol_rm,
-                "pm_adv": float(calculate_pm_to_adv_ratio(adv * 0.05, adv)) # mock ratio
+                "pm_adv": float(calculate_pm_to_adv_ratio(adv * 0.05, adv))
             },
             "points": points,
             "gaps": visible_gaps,
