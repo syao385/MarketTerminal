@@ -2484,54 +2484,107 @@
         container.appendChild(row);
       });
 
-      // Fetch catalysts sequentially
+      // 1. Try a single batch Gemini AI query for all symbols first to get high-quality catalysts instantly
+      let batchSuccess = false;
+      const symbols = filtered.map(g => g.symbol);
       const geminiKey = localStorage.getItem('gemini_api_key');
       const model = getActiveGeminiModel();
 
-      for (let i = 0; i < filtered.length; i++) {
-        const g = filtered[i];
-        const catalystEl = container.querySelector(`.pg-catalyst-${g.symbol}`);
-        if (!catalystEl) continue;
-
+      if (geminiKey && geminiKey.trim().length >= 12 && symbols.length > 0) {
         try {
-          let newsText = '';
-          let directHeadline = '';
+          const prompt = `Identify the breaking news catalyst or reason driving the price movement today for each of the following stock symbols: ${JSON.stringify(symbols)}. Return only a valid JSON object mapping each symbol to a short, precise catalyst description (maximum 10 words) that mentions if the stock is rising or falling on the news. Do not include any markdown, backticks, or other text. Example: {"AAPL": "Rising on announcement of partnership with OpenAI"}`;
+          
+          let attempts = 0;
+          const maxAttempts = 3;
+          let response = null;
+          let useSearch = true;
 
-          // 1. Try Google News RSS directly via proxy (Finnhub news replaced by Google News)
-          try {
-            const googleNewsUrl = `https://news.google.com/rss/search?q=${g.symbol}+stock+when:1d&hl=en-US&gl=US&ceid=US:en`;
-            const xml = await fetchWithProxy(googleNewsUrl);
-            const parsed = parseXmlFeed(xml);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              // Compile news text for Gemini fallback just in case
-              newsText = parsed.slice(0, 10).map(item => `Headline: ${item.title}\nSummary: ${item.description || ''}`).join('\n');
-
-              // Find if there is a recent headline (< 24 hours old)
-              const sorted = [...parsed].sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-              const newest = sorted[0];
-              const pubTime = new Date(newest.pubDate).getTime();
-              const nowTime = Date.now();
-              if (!isNaN(pubTime) && (nowTime - pubTime) < 24 * 3600 * 1000) {
-                directHeadline = newest.title;
+          while (attempts < maxAttempts) {
+            attempts++;
+            try {
+              const bodyObj = {
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.1 }
+              };
+              if (useSearch) {
+                bodyObj.tools = [{ googleSearch: {} }];
               }
+
+              response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(bodyObj)
+              });
+
+              if (response.ok) break;
+
+              // Fallback: If search grounding is rate limited (429), retry immediately without search
+              if (response.status === 429 && useSearch) {
+                console.warn("Search-grounding rate limit hit in batch catalyst. Retrying without search...");
+                useSearch = false;
+                attempts--;
+                continue;
+              }
+
+              if (response.status === 503 || response.status === 429 || response.status === 500) {
+                console.warn(`Gemini API returned ${response.status}. Retrying batch catalyst ${attempts}/${maxAttempts}...`);
+                await new Promise(r => setTimeout(r, 1000 * attempts));
+                continue;
+              }
+              throw new Error("HTTP " + response.status);
+            } catch (e) {
+              if (attempts >= maxAttempts) throw e;
+              await new Promise(r => setTimeout(r, 1000 * attempts));
             }
-          } catch (gNewsErr) {
-            console.warn(`Direct Google News catalyst fetch failed for ${g.symbol}`, gNewsErr);
           }
 
-          // 2. Try Yahoo News (RSS) if we don't have a direct headline yet
-          if (!directHeadline) {
+          if (response && response.ok) {
+            const data = await response.json();
+            let text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            
+            const startIdx = text.indexOf('{');
+            const endIdx = text.lastIndexOf('}');
+            if (startIdx !== -1 && endIdx !== -1) {
+              text = text.substring(startIdx, endIdx + 1);
+            }
+
+            const catalystsMap = JSON.parse(text);
+            if (catalystsMap && typeof catalystsMap === 'object') {
+              for (const sym of symbols) {
+                const catText = catalystsMap[sym] || catalystsMap[sym.toUpperCase()];
+                const catalystEl = container.querySelector(`.pg-catalyst-${sym}`);
+                if (catalystEl && catText) {
+                  catalystEl.innerHTML = `<span>${catText}</span>`;
+                }
+              }
+              batchSuccess = true;
+              console.log("Successfully loaded gapper catalysts via batch Gemini query.");
+            }
+          }
+        } catch (batchErr) {
+          console.warn("Batch Gemini catalyst lookup failed, falling back to local scraper loop...", batchErr);
+        }
+      }
+
+      // 2. Sequential fallback loop if batch AI failed or key is not present
+      if (!batchSuccess) {
+        for (let i = 0; i < filtered.length; i++) {
+          const g = filtered[i];
+          const catalystEl = container.querySelector(`.pg-catalyst-${g.symbol}`);
+          if (!catalystEl) continue;
+
+          try {
+            let newsText = '';
+            let directHeadline = '';
+
+            // A. Try Google News RSS directly via proxy (Finnhub news replaced by Google News)
             try {
-              const yahooUrl = `https://finance.yahoo.com/rss/headline?s=${g.symbol}`;
-              const xml = await fetchWithProxy(yahooUrl);
+              const googleNewsUrl = `https://news.google.com/rss/search?q=${g.symbol}+stock+when:1d&hl=en-US&gl=US&ceid=US:en`;
+              const xml = await fetchWithProxy(googleNewsUrl);
               const parsed = parseXmlFeed(xml);
               if (Array.isArray(parsed) && parsed.length > 0) {
-                // If newsText is empty, compile it for Gemini fallback
-                if (!newsText) {
-                  newsText = parsed.slice(0, 10).map(item => `Headline: ${item.title}\nSummary: ${item.description || ''}`).join('\n');
-                }
+                newsText = parsed.slice(0, 10).map(item => `Headline: ${item.title}\nSummary: ${item.description || ''}`).join('\n');
 
-                // Sort by date to get the newest
                 const sorted = [...parsed].sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
                 const newest = sorted[0];
                 const pubTime = new Date(newest.pubDate).getTime();
@@ -2540,97 +2593,118 @@
                   directHeadline = newest.title;
                 }
               }
-            } catch (yErr) {
-              console.warn(`Direct Yahoo News catalyst fetch failed for ${g.symbol}`, yErr);
+            } catch (gNewsErr) {
+              console.warn(`Direct Google News catalyst fetch failed for ${g.symbol}`, gNewsErr);
             }
-          }
 
-          // 3. Try Benzinga Scraper if we don't have a direct headline yet
-          if (!directHeadline) {
-            try {
-              const benzingaUrl = `https://www.benzinga.com/quote/${g.symbol}`;
-              const bzHtml = await fetchWithProxy(benzingaUrl);
+            // B. Try Yahoo News (RSS) if we don't have a direct headline yet
+            if (!directHeadline) {
+              try {
+                const yahooUrl = `https://finance.yahoo.com/rss/headline?s=${g.symbol}`;
+                const xml = await fetchWithProxy(yahooUrl);
+                const parsed = parseXmlFeed(xml);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  if (!newsText) {
+                    newsText = parsed.slice(0, 10).map(item => `Headline: ${item.title}\nSummary: ${item.description || ''}`).join('\n');
+                  }
 
-              const strippedText = bzHtml
-                .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-                .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-                .replace(/<[^>]+>/g, ' ')
-                .replace(/\s+/g, ' ')
-                .trim()
-                .substring(0, 7000);
-
-              if (!newsText) {
-                newsText = strippedText;
-              }
-
-              // Extract a potential headline from HTML using DOMParser
-              const parser = new DOMParser();
-              const doc = parser.parseFromString(bzHtml, 'text/html');
-
-              const candidates = [];
-              doc.querySelectorAll('a').forEach(a => {
-                const href = a.getAttribute('href') || '';
-                const text = a.textContent.trim();
-                if ((href.includes('/news/') || href.includes('/content/')) && text.length > 25 && text.length < 150) {
-                  candidates.push(text);
+                  const sorted = [...parsed].sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+                  const newest = sorted[0];
+                  const pubTime = new Date(newest.pubDate).getTime();
+                  const nowTime = Date.now();
+                  if (!isNaN(pubTime) && (nowTime - pubTime) < 24 * 3600 * 1000) {
+                    directHeadline = newest.title;
+                  }
                 }
-              });
-              doc.querySelectorAll('h3, h4').forEach(h => {
-                const text = h.textContent.trim();
-                if (text.length > 25 && text.length < 150) {
-                  candidates.push(text);
+              } catch (yErr) {
+                console.warn(`Direct Yahoo News catalyst fetch failed for ${g.symbol}`, yErr);
+              }
+            }
+
+            // C. Try Benzinga Scraper if we don't have a direct headline yet
+            if (!directHeadline) {
+              try {
+                const benzingaUrl = `https://www.benzinga.com/quote/${g.symbol}`;
+                const bzHtml = await fetchWithProxy(benzingaUrl);
+
+                const strippedText = bzHtml
+                  .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                  .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                  .replace(/<[^>]+>/g, ' ')
+                  .replace(/\s+/g, ' ')
+                  .trim()
+                  .substring(0, 7000);
+
+                if (!newsText) {
+                  newsText = strippedText;
                 }
+
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(bzHtml, 'text/html');
+
+                const candidates = [];
+                doc.querySelectorAll('a').forEach(a => {
+                  const href = a.getAttribute('href') || '';
+                  const text = a.textContent.trim();
+                  if ((href.includes('/news/') || href.includes('/content/')) && text.length > 25 && text.length < 150) {
+                    candidates.push(text);
+                  }
+                });
+                doc.querySelectorAll('h3, h4').forEach(h => {
+                  const text = h.textContent.trim();
+                  if (text.length > 25 && text.length < 150) {
+                    candidates.push(text);
+                  }
+                });
+
+                if (candidates.length > 0) {
+                  directHeadline = candidates[0];
+                }
+              } catch (bzErr) {
+                console.warn(`Direct Benzinga catalyst fetch failed for ${g.symbol}`, bzErr);
+              }
+            }
+
+            // D. Render if we got a direct headline
+            if (directHeadline) {
+              catalystEl.innerHTML = `<span>${directHeadline}</span>`;
+              continue;
+            }
+
+            // E. Gemini fallback
+            if (newsText && newsText.length > 50 && geminiKey && geminiKey.trim().length >= 12) {
+              await new Promise(r => setTimeout(r, 1500));
+
+              const promptText = `What recent news or catalyst is driving ${g.symbol} stock today? Return a one-sentence summary. Just the data — no commentary.\n\nNews Data:\n${newsText}`;
+
+              const bodyObj = {
+                contents: [{ parts: [{ text: promptText }] }],
+                generationConfig: { temperature: 0.1 }
+              };
+
+              const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(bodyObj)
               });
 
-              if (candidates.length > 0) {
-                directHeadline = candidates[0];
-              }
-            } catch (bzErr) {
-              console.warn(`Direct Benzinga catalyst fetch failed for ${g.symbol}`, bzErr);
-            }
-          }
-
-          // 4. Render if we got a direct headline
-          if (directHeadline) {
-            catalystEl.innerHTML = `<span>${directHeadline}</span>`;
-            continue; // Success! Skip Gemini entirely.
-          }
-
-          // 5. If we have news text but no direct recent headline, fallback to Gemini
-          if (newsText && newsText.length > 50 && geminiKey && geminiKey.trim().length >= 12) {
-            // Apply a 1.5s rate-limiting delay since we are hitting Gemini
-            await new Promise(r => setTimeout(r, 1500));
-
-            const promptText = `What recent news or catalyst is driving ${g.symbol} stock today? Return a one-sentence summary. Just the data — no commentary.\n\nNews Data:\n${newsText}`;
-
-            const bodyObj = {
-              contents: [{ parts: [{ text: promptText }] }],
-              generationConfig: { temperature: 0.1 }
-            };
-
-            const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(bodyObj)
-            });
-
-            if (geminiRes.ok) {
-              const data = await geminiRes.json();
-              let catalystResult = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-              catalystResult = catalystResult.trim();
-              if (catalystResult) {
-                catalystEl.innerHTML = `<span>${catalystResult}</span>`;
-                continue;
+              if (geminiRes.ok) {
+                const data = await geminiRes.json();
+                let catalystResult = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                catalystResult = catalystResult.trim();
+                if (catalystResult) {
+                  catalystEl.innerHTML = `<span>${catalystResult}</span>`;
+                  continue;
+                }
               }
             }
+
+            catalystEl.innerHTML = `<span style="color:var(--txt-sec);">No catalyst.</span>`;
+
+          } catch (catErr) {
+            console.error(`Catalyst lookup failed for ${g.symbol}:`, catErr);
+            catalystEl.innerHTML = `<span style="color:var(--txt-sec);">No catalyst.</span>`;
           }
-
-          // 6. Final Catch-all if everything failed or was empty
-          catalystEl.innerHTML = `<span style="color:var(--txt-sec);">No catalyst.</span>`;
-
-        } catch (catErr) {
-          console.error(`Catalyst lookup failed for ${g.symbol}:`, catErr);
-          catalystEl.innerHTML = `<span style="color:var(--txt-sec);">No catalyst.</span>`;
         }
       }
     }
@@ -2684,7 +2758,7 @@
       container.innerHTML = `<tr><td colspan="2" style="text-align:center; color:var(--txt-sec); padding:20px;"><div class="spinner" style="margin: 0 auto 8px auto;"></div>Loading in-play stocks from Gemini...</td></tr>`;
 
       const model = getActiveGeminiModel();
-      const prompt = "Identify the top 10 stocks currently in play in the US stock market today. Return only a valid JSON array of objects, where each object has a 'symbol' (uppercase stock ticker) and a 'catalyst' (a short sentence explanation of why it is in play, maximum 8 words). Do not include any markdown code blocks, backticks, or other conversational text. Example: [{\"symbol\": \"AAPL\", \"catalyst\": \"iPhone sales surge\"}]";
+      const prompt = "Identify the top 10 stocks currently in play in the US stock market today (significant price action or breaking news). Return only a valid JSON array of objects, where each object has a 'symbol' (uppercase stock ticker) and a 'catalyst' (a short sentence explanation of why it is in play and whether it is rising or falling on the news, maximum 10 words). Do not include any markdown code blocks, backticks, or other conversational text. Example: [{\"symbol\": \"AAPL\", \"catalyst\": \"Rising on iPhone sales surge and retail demand\"}]";
 
       try {
         let attempts = 0;
