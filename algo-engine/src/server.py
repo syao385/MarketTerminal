@@ -60,8 +60,9 @@ def get_indicators(
         daily_hist = ticker.history(period="30d")
         adv = float(daily_hist["Volume"].mean()) if not daily_hist.empty else 1.0
         
-        # Calculate SMAs, Gaps, and FVGs on timeframe history
+        # Calculate SMAs, Gaps, FVGs, and Volume SMA
         history = calculate_smas(history)
+        history['vol_sma_20'] = history['Volume'].rolling(window=20).mean()
         unmitigated_gaps = find_unmitigated_gaps(history)
         unmitigated_fvgs = find_unmitigated_fvgs(history)
         
@@ -87,7 +88,7 @@ def get_indicators(
             gex_levels["regime"] = get_gamma_regime(spot, gex_levels["gex_flip"])
             gex_data = gex_levels
 
-        # 2. RVOL Calculations (true time-slice volume pacing check against past 20 days)
+        # 2. RVOL Calculations (time-slice check against past 20 days)
         rvol_ts = 1.0
         rvol_rm = 1.0
         try:
@@ -130,7 +131,8 @@ def get_indicators(
                 "volume": float(row["Volume"]),
                 "sma_20": float(row["sma_20"]) if not pd.isna(row["sma_20"]) else None,
                 "sma_50": float(row["sma_50"]) if not pd.isna(row["sma_50"]) else None,
-                "sma_200": float(row["sma_200"]) if not pd.isna(row["sma_200"]) else None
+                "sma_200": float(row["sma_200"]) if not pd.isna(row["sma_200"]) else None,
+                "vol_sma_20": float(row["vol_sma_20"]) if not pd.isna(row["vol_sma_20"]) else None
             })
             
         # Adjust gap and FVG indices relative to the returned subset

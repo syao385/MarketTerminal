@@ -1447,7 +1447,11 @@
         return;
       }
 
-      // Calculate chart boundaries based on candlestick wicks (High/Low)
+      // 1. Setup viewport dimensions (Price vs Volume Panes)
+      const priceHeight = height * 0.72;
+      const volPaneTop = priceHeight + 10;
+      const volHeight = height - volPaneTop - 18;
+
       const highs = points.map(p => p.high || p.close);
       const lows = points.map(p => p.low || p.close);
       let minPrice = Math.min(...lows);
@@ -1470,16 +1474,16 @@
       
       const range = (chartMax - chartMin) || 1;
 
-      // Draw background grid lines
+      // Draw background grid lines (price pane)
       ctx.strokeStyle = '#E8E8EC'; ctx.lineWidth = 1;
       for (let i = 1; i < 4; i++) {
-        ctx.beginPath(); ctx.moveTo(0, (height / 4) * i); ctx.lineTo(width, (height / 4) * i); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, (priceHeight / 4) * i); ctx.lineTo(width, (priceHeight / 4) * i); ctx.stroke();
       }
 
       const getX = (idx) => (idx / (points.length - 1)) * (width - 60) + 15;
-      const getY = (val) => height - 25 - ((val - chartMin) / range) * (height - 50);
+      const getY = (val) => priceHeight - 20 - ((val - chartMin) / range) * (priceHeight - 35);
 
-      // 1. Draw Unmitigated Gaps and Fair Value Gaps (FVGs)
+      // Draw Unmitigated Gaps and Fair Value Gaps (FVGs)
       if (activePlaybookIndicators && activePlaybookIndicators.symbol === activeTicker) {
         const drawZone = (zone, label, colorFill, colorBorder) => {
           if (zone.top && zone.bottom) {
@@ -1488,18 +1492,15 @@
             const xStart = getX(zone.start_idx);
             const xEnd = width - 55;
             
-            // Draw transparent rectangle
             ctx.fillStyle = colorFill;
             ctx.fillRect(xStart, Math.min(yTop, yBottom), xEnd - xStart, Math.abs(yTop - yBottom));
             
-            // Draw thin dashed border
             ctx.strokeStyle = colorBorder;
             ctx.lineWidth = 1;
             ctx.setLineDash([3, 3]);
             ctx.strokeRect(xStart, Math.min(yTop, yBottom), xEnd - xStart, Math.abs(yTop - yBottom));
             ctx.setLineDash([]);
             
-            // Label
             ctx.font = '8px JetBrains Mono';
             ctx.fillStyle = colorBorder;
             ctx.textAlign = 'left';
@@ -1523,7 +1524,7 @@
         });
       }
 
-      // 2. Draw Candlesticks
+      // Draw Candlesticks
       const bodyWidth = Math.max(3, ((width - 60) / points.length) * 0.7);
       points.forEach((p, idx) => {
         const x = getX(idx);
@@ -1532,7 +1533,6 @@
           const isGreen = p.close >= p.open;
           const color = isGreen ? '#10B981' : '#EF4444';
           
-          // Wick
           ctx.strokeStyle = color;
           ctx.lineWidth = 1.2;
           ctx.beginPath();
@@ -1540,7 +1540,6 @@
           ctx.lineTo(x, getY(p.low));
           ctx.stroke();
           
-          // Body
           ctx.fillStyle = color;
           ctx.fillRect(
             x - bodyWidth / 2,
@@ -1549,7 +1548,6 @@
             Math.max(1.5, Math.abs(getY(p.open) - getY(p.close)))
           );
         } else {
-          // Fallback line connection
           ctx.strokeStyle = '#6366F1'; ctx.lineWidth = 2;
           const y = getY(p.close);
           if (idx === 0) ctx.beginPath().moveTo(x, y); else ctx.lineTo(x, y);
@@ -1557,7 +1555,7 @@
         }
       });
 
-      // 3. Draw SMAs (20, 50, 200)
+      // Draw SMAs (20, 50, 200)
       const drawMALine = (key, color) => {
         ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath();
         let isStarted = false;
@@ -1570,11 +1568,11 @@
         });
         if (isStarted) ctx.stroke();
       };
-      drawMALine('sma_20', '#3B82F6');   // SMA 20 (Blue)
-      drawMALine('sma_50', '#F59E0B');   // SMA 50 (Orange)
-      drawMALine('sma_200', '#8B5CF6');  // SMA 200 (Purple)
+      drawMALine('sma_20', '#3B82F6');
+      drawMALine('sma_50', '#F59E0B');
+      drawMALine('sma_200', '#8B5CF6');
 
-      // 4. Draw horizontal GEX walls
+      // Draw horizontal GEX walls (within price pane)
       if (activePlaybookIndicators && activePlaybookIndicators.symbol === activeTicker) {
         const gex = activePlaybookIndicators.gex;
         const gexLines = [
@@ -1603,10 +1601,78 @@
         });
       }
 
+      // 2. Draw Pane Separator
+      ctx.strokeStyle = '#D1D5DB'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(0, volPaneTop); ctx.lineTo(width, volPaneTop); ctx.stroke();
+
+      // 3. Draw Volume Pane & Color-Coding by RVOL & Delta
+      const maxVol = Math.max(...points.map(p => p.volume)) || 1;
+      points.forEach((p, idx) => {
+        const x = getX(idx);
+        const barHeight = (p.volume / maxVol) * volHeight;
+        const yVol = height - 15 - barHeight;
+        
+        const open = p.open !== undefined ? p.open : p.close;
+        const isGreen = p.close >= open;
+        
+        // Compute individual bar RVOL
+        const barRvol = p.vol_sma_20 ? (p.volume / p.vol_sma_20) : 1.0;
+        
+        let color = '';
+        if (isGreen) {
+          if (barRvol >= 4.0) color = '#D946EF';      // Extreme Climax (Electric Magenta)
+          else if (barRvol >= 2.0) color = '#10B981'; // High Playbook Setup RVOL (Bright Neon Green)
+          else if (barRvol >= 1.0) color = 'rgba(16, 185, 129, 0.65)'; // Average
+          else color = 'rgba(16, 185, 129, 0.25)';   // Muted Low RVOL
+        } else {
+          if (barRvol >= 4.0) color = '#F59E0B';      // Extreme Climax (Electric Gold)
+          else if (barRvol >= 2.0) color = '#EF4444'; // High Playbook Setup RVOL (Bright Neon Red)
+          else if (barRvol >= 1.0) color = 'rgba(239, 68, 68, 0.65)'; // Average
+          else color = 'rgba(239, 68, 68, 0.25)';   // Muted Low RVOL
+        }
+        
+        ctx.fillStyle = color;
+        ctx.fillRect(x - bodyWidth / 2, yVol, bodyWidth, barHeight);
+      });
+
+      // 4. Calculate & Draw Cumulative Volume Delta (CVD)
+      let runningCvd = 0;
+      const cvdValues = points.map(p => {
+        const o = p.open !== undefined ? p.open : p.close;
+        const h = p.high !== undefined ? p.high : p.close;
+        const l = p.low !== undefined ? p.low : p.close;
+        const d = p.volume * ((p.close - o) / ((h - l) || 0.001));
+        runningCvd += d;
+        return runningCvd;
+      });
+      const minCvd = Math.min(...cvdValues);
+      const maxCvd = Math.max(...cvdValues);
+      const cvdRange = (maxCvd - minCvd) || 1;
+      const getCvdY = (cvd) => volPaneTop + volHeight - ((cvd - minCvd) / cvdRange) * volHeight;
+
+      ctx.strokeStyle = '#06B6D4'; ctx.lineWidth = 1.6; // Cyan CVD line
+      ctx.beginPath();
+      cvdValues.forEach((val, idx) => {
+        const x = getX(idx), y = getCvdY(val);
+        if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      // Label CVD Line
+      if (cvdValues.length > 0) {
+        ctx.font = '8px JetBrains Mono';
+        ctx.fillStyle = '#06B6D4';
+        ctx.textAlign = 'left';
+        ctx.fillText('CVD', width - 50, getCvdY(cvdValues[cvdValues.length - 1]));
+      }
+
       // Draw Chart Price Legend/Labels on Y-Axis
       ctx.font = '10px JetBrains Mono'; ctx.fillStyle = '#6B6B6B'; ctx.textAlign = 'right';
       ctx.fillText(chartMax.toFixed(2), width - 5, 15);
-      ctx.fillText(chartMin.toFixed(2), width - 5, height - 5);
+      ctx.fillText(chartMin.toFixed(2), width - 5, priceHeight - 5);
+      
+      // Draw Volume Label
+      ctx.fillText(formatVolume(maxVol), width - 5, volPaneTop + 12);
 
       // Draw Indicator Legend at top-left corner
       ctx.font = '10px JetBrains Mono';
@@ -1614,6 +1680,7 @@
       ctx.fillStyle = '#3B82F6'; ctx.fillText('SMA20', 15, 15);
       ctx.fillStyle = '#F59E0B'; ctx.fillText('SMA50', 60, 15);
       ctx.fillStyle = '#8B5CF6'; ctx.fillText('SMA200', 105, 15);
+      ctx.fillStyle = '#06B6D4'; ctx.fillText('CVD Flow', 150, 15);
     }
 
     // Active Stock Details Updates
