@@ -1,19 +1,19 @@
 # Implementation Plan - Aether Momentum Algorithmic Trading System (Phase 3)
 
-This plan describes the architectural strategy and staged milestones to implement the 15-setup momentum trading playbook as a semi-automated/fully-automated algorithmic execution engine.
+This plan describes the architectural strategy, staged milestones, and design choices to implement the 15-setup momentum trading playbook as a highly flexible, transparent, and backtestable execution engine.
 
 ---
 
 ## 1. Project Organization: Versioning & Branching Strategy
 
-To keep the existing production visual terminal ([index.html](file:///c:/Users/jfan/Documents/MarketTerminal/index.html)) fully functional and stable for daily trading, we recommend a **hybrid repository structure** in a **new Git branch**:
+To keep the existing production visual terminal ([index.html](file:///c:/Users/jfan/Documents/MarketTerminal/index.html)) fully functional and stable for daily trading, we will develop inside a **new Git branch**:
 
 ### A. Git Branching Model
 *   **Branch Name:** `feature/algo-integration`
 *   **Methodology:** All development for the algorithmic engine occurs in this branch. Once fully tested in paper trading, it will be merged into `main` via a Pull Request.
 
 ### B. Directory Structure
-Instead of creating a completely separate project directory (which fragments Git history and duplicate APIs), we will create a dedicated backend directory inside the existing repository:
+Instead of creating a completely separate project directory, we will create a dedicated backend directory inside the existing repository:
 ```
 MarketTerminal/
 │
@@ -21,71 +21,104 @@ MarketTerminal/
 ├── proxy-server.js              # Stable CORS bypass server
 │
 └── algo-engine/                 # [NEW] Algorithmic execution backend
-    ├── config/                  # Configuration files (API keys, risk thresholds)
-    ├── data/                    # Historical data caches and daily GEX profiles
+    ├── config/                  # Configuration files (API keys, risk thresholds, setup params)
+    ├── data/                    # Historical caches and GEX profiles
     ├── src/                     # Core execution codebase
-    │   ├── calculations.py      # RVOL, Volatility contraction, SMA/EMA calculations
-    │   ├── scorecards.py        # MOS-B, MOS-A, MOS-P rubric evaluation
-    │   ├── execution.py         # Broker API connectors (Alpaca/IBKR) and order placement
+    │   ├── calculations/        # RVOL, Volatility contraction, SMA/EMA calculations
+    │   ├── setups/              # Modular setup registry
+    │   │   ├── base.py          # Base Setup abstract class
+    │   │   ├── setup_1.py       # Gap and Go class
+    │   │   ├── setup_12.py      # Standard ORB class
+    │   │   └── ...              # Outlines for remaining 13 setups
+    │   ├── backtest/            # Backtester and parameter optimizer
+    │   │   ├── engine.py        # Reusable backtesting loop
+    │   │   └── optimizer.py     # Parameter sweep optimizer (SL, target, RVOL tuning)
+    │   ├── execution/           # Broker API connectors (Alpaca SDK)
+    │   │   └── alpaca.py        # Alpaca execution with custom client_order_id tagging
     │   └── server.py            # Local REST/WebSocket API server for index.html cockpit
     └── requirements.txt         # Python dependencies
 ```
-*This architecture keeps the frontend and backend separate, allowing the browser terminal to fetch real-time algorithmic signals and portfolio metrics from a local `algo-engine` service running in the background.*
 
 ---
 
-## 2. Staged Implementation Milestones
+## 2. Key Design Specifications
+
+### A. Modular Setup Registry (Flexibility)
+To ensure the 15 setups can easily evolve, we will use a registry pattern. Every setup inherits from a base class:
+```python
+class BaseSetup:
+    def __init__(self, params: dict):
+        self.params = params  # e.g., {'stop_loss_pct': 0.015, 'target_pct': 0.03, 'rvol_threshold': 1.5}
+        
+    def check_trigger(self, data: pd.DataFrame) -> bool:
+        """Returns True if setup trigger conditions are met."""
+        raise NotImplementedError
+        
+    def calculate_mos(self, data: pd.DataFrame) -> float:
+        """Evaluates the setup's tailored scoring scorecard."""
+        raise NotImplementedError
+```
+All parameters are stored in a configuration file (`config/setups.yaml`). You can adjust thresholds (e.g., changing ORB window or VCP contraction counts) without touching the code.
+
+### B. Reusable Backtest & Parameter Optimizer (Tuning)
+*   **Engine (`backtest/engine.py`):** Runs historical simulations on day/intraday candles.
+*   **Optimizer (`backtest/optimizer.py`):** Runs automated parameter sweeps (e.g., testing stop-losses from $0.5\%$ to $3.0\%$ in $0.1\%$ increments) to output optimal win rates, profit factors, and Sharpe ratios for each setup.
+*   **Journaling & Alpaca Tags:** When executing trades, the engine generates a tagged `client_order_id`:
+    `client_order_id = f"AETHER_{setup_id}_{timestamp}"`
+    Alpaca's execution reporting carries this ID, which is automatically saved to a local SQLite/JSON journal database for historical performance auditing.
+
+### C. Transparency & Visual Validation (No Black Box)
+To avoid black-box execution, the engine exposes all underlying data:
+1.  **UI Detail Panel:** The frontend dashboard will display the exact scorecard calculations (e.g., `Catalyst: +3.0, Vol: +2.5, GEX: +1.5 = MOS 9.0`).
+2.  **Visual Validation Export:** The engine will export trade triggers and historical indicators to a standard CSV format configured for easy copy-pasting/importing into **TradingView** or **ThinkOrSwim** charts.
+3.  **Lightweight Chart Integration:** In Milestone 4, we will embed a lightweight charting utility in the UI that highlights GEX levels, VWAP, EMA lines, and execution marker points.
+
+---
+
+## 3. Staged Implementation Milestones
 
 ```
-+-------------------------------------------------------------------------------+
-|  MILESTONE 1: Data Engine  ==>  MILESTONE 2: Scanners  ==>  MILESTONE 3: Execution  |
-+-------------------------------------------------------------------------------+
++-------------------------------------------------------------------------------------+
+|  MILESTONE 1: Data Engine  ==>  MILESTONE 2: Scanners/Backtest  ==>  MILESTONE 3: Execution  |
++-------------------------------------------------------------------------------------+
 ```
 
 ### Milestone 1: Local Data Engine & Calculations (Weeks 1-2)
 *   **Deliverables:**
-    *   Initialize Python environment and install connectors (Alpaca SDK, Pandas, NumPy).
-    *   Build real-time websocket data feeds for regular hours regular candles.
-    *   Implement **Time-Slice Premarket RVOL ($RVOL_{TS}$)** and **Regular Hours RVOL ($RVOL_{RM}$)** calculations.
-    *   Build daily parser at 08:45 AM to calculate and store options GEX parameters (Put Wall, Call Wall, Flip Level).
-*   **Verification:** Run unit scripts comparing calculated RVOLs against manual spreadsheet checks.
+    *   Initialize Python env, configure `config/setups.yaml` and Alpaca API.
+    *   Build websocket data feeds for regular hours candles.
+    *   Implement Time-Slice Premarket RVOL ($RVOL_{TS}$) and Regular Hours RVOL ($RVOL_{RM}$).
+    *   Set up daily 08:45 AM option GEX parser.
+*   **Verification:** Run checks to confirm RVOL and GEX output matches local records.
 
-### Milestone 2: Scanners & MOS Scorecards (Weeks 3-4)
+### Milestone 2: Setup Registry, Scanners & Backtester (Weeks 3-4)
 *   **Deliverables:**
-    *   Implement the 15 setups' logic triggers in `src/scorecards.py`.
-    *   Build the three tailored scoring rubrics: **MOS-B** (Breakouts), **MOS-A** (VCP/Anticipation), and **MOS-P** (Pullbacks).
-    *   Create a local console ticker scanner that prints active trading signals, calculated MOS scores, and catalysts.
-*   **Verification:** Verify that a simulated breakout (e.g., SMCI crossing PMH) correctly registers a high MOS-B score ($>8$) and triggers an entry signal in console logs.
+    *   Build `BaseSetup` and implement the 15 setups using YAML parameters.
+    *   Implement the 3 tailored scorecards (**MOS-B**, **MOS-A**, **MOS-P**).
+    *   Implement `backtest/engine.py` and `optimizer.py` for parameter tuning.
+    *   Build visual CSV exporters for TradingView validation.
+*   **Verification:** Run optimization sweeps on historical data to check setup profitability.
 
-### Milestone 3: Risk Management & Alpaca Paper Trading (Weeks 5-6)
+### Milestone 3: Order Execution & Alpaca Integration (Weeks 5-6)
 *   **Deliverables:**
-    *   Connect the engine to Alpaca Paper Trading API.
-    *   Implement **Slippage-Protected Buy Stop Limit orders**.
-    *   Build the position-sizing logic to dynamically allocate capital based on calculated MOS scores ($0.5\%$, $1.0\%$, or $2.0\%$ risk).
-    *   Implement portfolio-wide circuit breakers (3% daily drawdown stop, sector caps, max 5 positions limit).
-*   **Verification:** Run the algorithm live in paper trading mode for one week. Confirm that SL and PTP orders are sent instantly upon entry.
+    *   Connect `execution/alpaca.py` to Alpaca Paper Trading.
+    *   Implement Stop Limit order execution with 0.25% slippage controls.
+    *   Apply dynamic sizing based on MOS score ($0.5\%$, $1.0\%$, or $2.0\%$ risk).
+    *   Implement portfolio-wide constraints (3% daily limit, sector caps, 5 active trades limit).
+    *   Add setup-tagged `client_order_id` journaling.
+*   **Verification:** Run paper trading simulation to confirm tag-grouped orders are executed correctly.
 
-### Milestone 4: Cockpit Integration & UI updates (Week 7)
+### Milestone 4: Cockpit Integration & Charting Panel (Week 7)
 *   **Deliverables:**
-    *   Add a local websocket API to the Python engine to stream active logs and metrics.
-    *   Modify [index.html](file:///c:/Users/jfan/Documents/MarketTerminal/index.html) in the `feature/algo-integration` branch to connect to this local API.
-    *   Add a new **"Algo Execution Control" panel** in the UI, showing active algorithmic positions, current daily P&L, system log streams, and a master **ALGO ON/OFF Kill-Switch**.
-*   **Verification:** Launch the engine and open index.html. Verify that the UI displays paper trading logs, active orders, and GEX levels.
-
----
-
-## 3. Open Questions for User Review
-
-> [!IMPORTANT]
-> Please review and provide feedback on these key operational decisions:
-> 1. **Preferred Broker API:** Do you prefer using **Alpaca** (developer-friendly, excellent paper trading) or **Interactive Brokers (IBKR)** (broader asset availability, but more complex API setup)?
-> 2. **Core Language:** Is **Python** acceptable for the backend `algo-engine`? It is the industry standard for mathematical models, calculations, and broker SDKs.
-> 3. **Manual Approval vs. Full Autonomy:** For the first stages, do you want a "Semi-Automated" mode (the algo scans and calculates, but you must click "Approve" in the browser cockpit to execute) or "Fully Automated" mode from day one?
+    *   Build websocket server to stream live calculations and logs.
+    *   Add the **"Algo Execution Control"** dashboard in `index.html`.
+    *   Integrate a lightweight charting window to visualize candles, GEX walls, and execution signals.
+*   **Verification:** Final end-to-end dry run.
 
 ---
 
 ## 4. Verification Plan
 
-1.  **Dry Run Backtest:** Run the calculations module against historical data for SMCI and NVDA to verify $RVOL_{RM}$ accuracy at 09:45 AM.
-2.  **Order Placement Integrity:** Verify that a Stop Limit order is placed at the exact PMH + 0.25% limit ceiling, and rejects if the gap is skipped.
-3.  **Circuit Breaker Stress Test:** Simulate a portfolio drop of 3% in paper mode and verify that the engine triggers immediate market sell orders on all positions and halts trading.
+1.  **Backtest Sweep Verification:** Run the optimizer to check that tuning suggestions correspond to correct trade stats.
+2.  **Order Tag Audit:** Fetch Alpaca execution logs to verify orders carry correct `AETHER_{setup_id}` tags.
+3.  **Visualization Audit:** Check that GEX walls and entry indicators align with TradingView charts.
