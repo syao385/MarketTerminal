@@ -52,9 +52,9 @@ By integrating options market maker positioning (dealers' hedging constraints) a
 
 ---
 
-## 3. The 11 Momentum Trading Setups (By Category)
+## 3. The 15 Momentum Trading Setups (By Category)
 
-To achieve maximum quantitative accuracy, the 11 setups are divided into **three functional categories**, each with its own structural requirements, triggers, stops, targets, and exit rules.
+To achieve maximum quantitative accuracy, the 15 setups are divided into **three functional categories**, each with its own structural requirements, triggers, stops, targets, and exit rules.
 
 ---
 
@@ -102,6 +102,34 @@ To achieve maximum quantitative accuracy, the 11 setups are divided into **three
 *   **Stop-Loss:** Low of the flag consolidation range.
 *   **Target:** $+50\%$ extension from the flag breakout point.
 *   **Exit / Trailing Stop:** Sell 50% at $3\text{R}$ (swing breakout target), move stop to breakeven, and trail the remaining 50% using the daily 10-EMA.
+
+#### Setup 12: Standard Opening Range Breakout (ORB) (Intraday)
+*   **Concept:** Buying a high-relative-volume stock that breaks out above its initial 15-minute high. Unlike Gap and Go, the stock does not need to gap up significantly at the open.
+*   **Trigger / Scanner Condition:** Intraday volume spike ($RVOL_{TS} > 1.5$). Plot the high and low of the first 15 minutes of the regular session. Entry triggers when a 5-minute candle closes above the 15-minute high.
+*   **Stop-Loss:** Midpoint of the 15-minute range or the 15-minute low (PML/ORL).
+*   **Target:** $+2$ Standard Deviation price expansion.
+*   **Exit / Trailing Stop:** Sell 50% at $1.5\text{R}$, move stop to breakeven, and trail the remaining 50% with VWAP or the 9 EMA.
+
+#### Setup 13: "Blue Sky" / All-Time High (ATH) Breakout (Swing)
+*   **Concept:** Buying a stock breaking out to all-time highs (or multi-year highs). Since there is zero overhead supply (no historical trapped longs selling at breakeven), price can rise rapidly.
+*   **Trigger / Scanner Condition:** Price consolidates for $\ge 30$ trading days within 5% of its All-Time High. Entry is triggered when price closes above the ATH on volume $>1.5\times$ 20-day average.
+*   **Stop-Loss:** Daily close below the previous breakout pivot level or the daily 10-EMA.
+*   **Target:** $+20\%$ to $+30\%$ extension from the ATH level.
+*   **Exit / Trailing Stop:** Sell 40% at $2\text{R}$, sell 30% at $4\text{R}$, and trail the remaining 30% with the daily 10-EMA.
+
+#### Setup 14: Stage 1 to Stage 2 Trend Reversal (200 SMA Breakout) (Swing)
+*   **Concept:** The macro transition from a long downtrend/consolidation (Stage 1) to a primary uptrend (Stage 2) as institutions accumulate shares.
+*   **Trigger / Scanner Condition:** Price has spent $\ge 60$ trading days below the 200-day simple moving average (SMA). Entry triggers when a daily candle closes above the 200 SMA on volume $>2\times$ average. Concurrency: the 50 SMA is sloping upwards or crossing above the 200 SMA (Golden Cross).
+*   **Stop-Loss:** Daily close below the 200 SMA by more than 2%.
+*   **Target:** $+50\%$ to $+100\%$ macro swing extension.
+*   **Exit / Trailing Stop:** Sell 30% at $3\text{R}$, sell 30% at $6\text{R}$, and trail the final 40% using the daily 50 SMA.
+
+#### Setup 15: Post-Earnings Announcement Drift (PEAD) Consolidation Breakout (Swing)
+*   **Concept:** Entering a stock that is undergoing post-earnings drift after its initial Day 1 Episodic Pivot (EP). Instead of chasing, the trader buys the breakout of the first multi-week flag/consolidation pattern.
+*   **Trigger / Scanner Condition:** The stock had a verified EP within the last 40 trading days. Price consolidates in a tight range (daily flag/channel) above the EP gap low on declining volume. Entry triggers when a daily candle closes above the consolidation resistance on volume $>1.5\times$ average.
+*   **Stop-Loss:** Daily close below the consolidation support line.
+*   **Target:** $+20\%$ swing extension.
+*   **Exit / Trailing Stop:** Sell 50% at $2\text{R}$, move stop to breakeven, and trail the remaining 50% with the daily 21-EMA.
 
 ---
 
