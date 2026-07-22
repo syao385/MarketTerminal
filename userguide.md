@@ -131,3 +131,69 @@ flowchart TD
     WE5 -- "Z-Score > +1.5" --> WE6[Reduce positioning in that asset class]
     WE5 -- "Z-Score < -1.5" --> WE7[Increase positioning in that asset class]
 ```
+
+---
+
+## 4. Institutional Momentum Trading Playbook & Scoring Framework
+
+This section outlines how to synthesize the terminal's quantitative scanners, AI analyst briefings, and sentiment meters with traditional technical analysis to isolate and execute high-probability momentum setups.
+
+### A. The Three Core Momentum Setups
+
+#### 1. Gap and Go (Bullish Breakout)
+* **Concept:** A stock gaps up on high volume driven by a positive catalyst, opens above key resistance (Premarket High or Previous Day High), and sustains an upward trend.
+* **Terminal Identifiers:**
+  - *Premarket Gappers:* Gap > 5% on Volume > 100,000.
+  - *Premarket Catalyst:* Bullish catalyst (e.g., product launch, M&A expansion).
+  - *Top 10 In-Play:* Ticker is listed and shows a bullish catalyst sentence.
+  - *Sentiment Meters:* Unified sentiment is >60% Bullish (consensus).
+  - *Gemini Analyst:* Sentinel 1 highlights "institutional accumulation."
+* **Technical Trigger:** 
+  1. Plot the **Premarket High (PMH)** and **Premarket Low (PML)** on the chart.
+  2. Wait for the opening 5-minute candle to close green above PMH.
+  3. Enter Long. Set stop-loss at the **Opening Range Low (ORL)** or the PML.
+
+#### 2. Gap and Fade (Bearish Fakeout / Reversal)
+* **Concept:** A stock gaps up on news but the news is already priced in, represents a non-event, or lacks substance, causing institutions to distribute shares to retail buyers at the open.
+* **Terminal Identifiers:**
+  - *Premarket Gappers:* Gap > 5% but on fading or low pre-market volume.
+  - *Premarket Catalyst:* Generic news, old news, or "No catalyst" (scrapers failed to find fresh headlines).
+  - *Top 10 In-Play:* Listed as "falling" or not present.
+  - *Divergence Meter:* Reddit (Retail) is hyper-bullish, but WSJ/CNBC (Inst.) is bearish or silent.
+  - *Weekly Flows Z-Score:* Extremes > +1.5 (crowded longs).
+* **Technical Trigger:**
+  1. Price opens above PMH but fails to hold.
+  2. Price breaks down below **Premarket High (PMH)** or the 5-minute **Opening Range Low (ORL)**.
+  3. Enter Short (or sell open positions). Set stop-loss at the High of Day (HOD).
+
+#### 3. Episodic Pivot (EP) / Momentum Burst
+* **Concept:** Originally defined by trader *Stockbee*, an EP is a structural, game-changing event (e.g., massive earnings beat, surprise guidance upgrade, major regulatory clearance) that causes a stock to gap out of a long consolidation range on historic volume. This marks a multi-week/month institutional regime change.
+* **Terminal Identifiers:**
+  - *Premarket Gappers:* Large gap (>8%) on massive volume (often >5x average premarket volume).
+  - *Premarket Catalyst:* Game-changing catalyst (e.g., earnings blowout, resolving delisting risk via a new auditor).
+  - *Gemini Analyst:* Deep Dive reports a "regime shift / major structural catalyst" and targets long-term breakout levels.
+  - *Macro Flows:* ETF flow Z-scores show a "Bullish Reversal" regime.
+* **Technical Trigger:**
+  1. Mark the Daily chart's previous 50-day resistance pivot.
+  2. Price breaks out above the 50-day pivot on the opening 15-minute candle.
+  3. Enter Long. Place stop-loss at the Low of the EP Day (LOD). Add to the position on pullbacks to the daily **9-day EMA** or intraday **VWAP**.
+
+---
+
+### B. The Momentum Opportunity Scorecard (MOS)
+
+Before entering a momentum trade, evaluate and score the ticker using this **10-point scoring rubric**:
+
+| Category | Indicator Checked | Condition | Score |
+| :--- | :--- | :--- | :--- |
+| **1. Catalyst Quality** | Premarket Gappers / In-Play | **Tier 1:** Earnings surprise, major FDA approval, game-changing contract.<br>**Tier 2:** Analyst upgrade, general news.<br>**Tier 3:** No catalyst, technical gap only, or faded news. | **+3 pts**<br><br>**+1 pt**<br>**+0 pts** |
+| **2. Sentiment Alignment** | Sentiment & Divergence Meters | **Consensus:** Both Retail & Institutional are bullish (>60%).<br>**Divergence:** Retail is bullish, but Institutional is neutral/bearish.<br>**Bearish Consensus:** Both Retail & Institutional are bearish (>60%). | **+2 pts**<br>**-1 pt**<br>**-2 pts** |
+| **3. Volume Signature** | Watchlist & Gapper Volume | **Historic Volume:** Premarket Vol > 300k shares or >3x average.<br>**Standard Volume:** Premarket Vol 50k - 300k shares.<br>**Low Volume:** Premarket Vol < 50k shares. | **+2 pts**<br><br>**+1 pt**<br>**-1 pt** |
+| **4. Technical Price Levels** | Interactive Chart | **Breakout:** Price holds green above Premarket High (PMH).<br>**Stuck Range:** Price consolidates inside the premarket range.<br>**Breakdown:** Price breaks below Premarket Low (PML). | **+3 pts**<br>**+0 pts**<br>**-3 pts** |
+| **5. Macro Regime** | Macro Flows / SMI | **Risk-On:** SMI is rising, Weekly Flows show Bullish Reversal.<br>**Risk-Off:** SMI is falling, Weekly Flows Z-Score > +1.5 (crowded). | **+1 pt**<br>**-1 pt** |
+
+#### Trading Action Plan Based on Score:
+* **Score 8 - 10: High-Conviction Breakout (Episodic Pivot / Gap & Go).** Commit full standard size. Buy the PMH breakout or pullbacks to the 9-EMA / VWAP.
+* **Score 5 - 7: Moderate Momentum Continuation.** Commit 50% standard size. Wait for the 15-minute Opening Range Breakout (ORB) before entry.
+* **Score < 5: High-Probability Fade / Fakeout (Gap & Fade).** Do not buy. Look for short opportunities if price breaks below the 5-minute Opening Range Low.
+
