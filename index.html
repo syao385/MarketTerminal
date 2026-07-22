@@ -704,7 +704,7 @@
               <i data-lucide="sparkles" style="width:14px; height:14px;"></i>
               <span>Deep Dive Analysis</span>
             </button>
-            <span class="ai-model" id="ai-model-display">gemini-1.5-flash</span>
+            <span class="ai-model" id="ai-model-display">gemini-3.6-flash</span>
           </div>
           <div class="ai-output">
             <div id="ai-output-text" class="ai-txt">Click "Deep Dive Analysis" to run a live stock evaluation based on news and ticker trends.</div>
@@ -965,14 +965,14 @@
         </div>
         <div class="form-grp">
           <label for="model-input">Gemini Model</label>
-          <input type="text" id="model-input" list="gemini-models" placeholder="e.g. gemini-1.5-flash">
+          <input type="text" id="model-input" list="gemini-models" placeholder="e.g. gemini-3.6-flash">
           <datalist id="gemini-models">
-            <option value="gemini-1.5-flash"></option>
-            <option value="gemini-2.0-flash"></option>
+            <option value="gemini-3.6-flash"></option>
+            <option value="gemini-3.5-flash"></option>
             <option value="gemini-2.5-flash"></option>
-            <option value="gemini-1.5-pro"></option>
+            <option value="gemini-2.5-pro"></option>
           </datalist>
-          <span class="help-txt">Choose an active model or type a custom name (e.g. gemini-1.5-flash is current and active).</span>
+          <span class="help-txt">Choose an active model or type a custom name (e.g. gemini-3.6-flash is current and active).</span>
         </div>
         <div class="form-grp">
           <label for="finnhub-key-input">Finnhub API Key</label>
@@ -1918,7 +1918,7 @@
     function getActiveGeminiModel() {
       let model = localStorage.getItem('gemini_model');
       if (!model || model.trim() === '' || model === 'null' || model === 'undefined') {
-        model = 'gemini-1.5-flash';
+        model = 'gemini-3.6-flash';
       }
       return model.trim();
     }
@@ -4043,8 +4043,15 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
     window.addEventListener('load', async () => {
       // 1. Initial Local Storage states & Model Migration
       const storedModel = localStorage.getItem('gemini_model');
-      if (!storedModel || storedModel.trim() === '' || storedModel === 'null' || storedModel === 'undefined' || storedModel === 'gemini-3.5-flash' || storedModel === 'gemini-2.5-flash' || storedModel === 'gemini-2.0-flash') {
-        localStorage.setItem('gemini_model', 'gemini-1.5-flash');
+      const VALID_MODELS = new Set([
+        'gemini-3.6-flash',
+        'gemini-3.5-flash',
+        'gemini-2.5-flash',
+        'gemini-2.0-flash',
+        'gemini-2.5-pro'
+      ]);
+      if (!storedModel || !VALID_MODELS.has(storedModel.trim())) {
+        localStorage.setItem('gemini_model', 'gemini-3.6-flash');
       }
       getPortfolio();
       getWatchlist();
@@ -4215,7 +4222,7 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
       cancelBtn.addEventListener('click', hideModal);
       saveBtn.addEventListener('click', async () => {
         localStorage.setItem('gemini_api_key', apiInput.value.trim());
-        localStorage.setItem('gemini_model', document.getElementById('model-input').value.trim() || 'gemini-1.5-flash');
+        localStorage.setItem('gemini_model', document.getElementById('model-input').value.trim() || 'gemini-3.6-flash');
         localStorage.setItem('finnhub_api_key', document.getElementById('finnhub-key-input').value.trim());
         updateAiStatusPill();
         hideModal();
