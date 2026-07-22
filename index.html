@@ -704,7 +704,7 @@
               <i data-lucide="sparkles" style="width:14px; height:14px;"></i>
               <span>Deep Dive Analysis</span>
             </button>
-            <span class="ai-model" id="ai-model-display">gemini-3.5-flash</span>
+            <span class="ai-model" id="ai-model-display">gemini-1.5-flash</span>
           </div>
           <div class="ai-output">
             <div id="ai-output-text" class="ai-txt">Click "Deep Dive Analysis" to run a live stock evaluation based on news and ticker trends.</div>
@@ -965,13 +965,14 @@
         </div>
         <div class="form-grp">
           <label for="model-input">Gemini Model</label>
-          <input type="text" id="model-input" list="gemini-models" placeholder="e.g. gemini-3.5-flash">
+          <input type="text" id="model-input" list="gemini-models" placeholder="e.g. gemini-1.5-flash">
           <datalist id="gemini-models">
-            <option value="gemini-3.5-flash"></option>
             <option value="gemini-1.5-flash"></option>
+            <option value="gemini-2.0-flash"></option>
+            <option value="gemini-2.5-flash"></option>
             <option value="gemini-1.5-pro"></option>
           </datalist>
-          <span class="help-txt">Choose an active model or type a custom name (e.g. gemini-3.5-flash is current and active).</span>
+          <span class="help-txt">Choose an active model or type a custom name (e.g. gemini-1.5-flash is current and active).</span>
         </div>
         <div class="form-grp">
           <label for="finnhub-key-input">Finnhub API Key</label>
@@ -1509,26 +1510,14 @@
         const googleInput = document.getElementById('google-query-input');
         if (googleInput) googleInput.value = activeTicker;
 
-        // Auto-switch news tab to symbol-specific news
-        const finnhubKey = localStorage.getItem('finnhub_api_key');
-        if (finnhubKey && finnhubKey.trim().length > 0) {
-          // In Finnhub mode, activate and load "company" news tab
-          const companyTabBtn = document.querySelector('#news-feed-tabs .tab-btn[data-feed="company"]');
-          if (companyTabBtn) {
-            document.querySelectorAll('#news-feed-tabs .tab-btn').forEach(t => t.classList.remove('active'));
-            companyTabBtn.classList.add('active');
-          }
-          loadNewsFeed('company');
-        } else {
-          // In standard RSS mode, activate and load "google_news" search tab
-          const googleTabBtn = document.querySelector('#news-feed-tabs .tab-btn[data-feed="google_news"]');
-          if (googleTabBtn) {
-            document.querySelectorAll('#news-feed-tabs .tab-btn').forEach(t => t.classList.remove('active'));
-            googleTabBtn.classList.add('active');
-            document.getElementById('google-search-bar').style.display = 'flex';
-          }
-          loadNewsFeed('google_news', activeTicker);
+        // Auto-switch news tab to symbol-specific news (using Google News for search filtering)
+        const googleTabBtn = document.querySelector('#news-feed-tabs .tab-btn[data-feed="google_news"]');
+        if (googleTabBtn) {
+          document.querySelectorAll('#news-feed-tabs .tab-btn').forEach(t => t.classList.remove('active'));
+          googleTabBtn.classList.add('active');
+          document.getElementById('google-search-bar').style.display = 'flex';
         }
+        loadNewsFeed('google_news', activeTicker);
       } catch (err) {
         console.error(err);
         chartInstance = null;
@@ -1921,7 +1910,7 @@
         dot.className = 'dot-status warning'; txt.textContent = 'DEMO MODE';
       }
       
-      const model = localStorage.getItem('gemini_model') || 'gemini-3.5-flash';
+      const model = localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
       const display = document.getElementById('ai-model-display');
       if (display) display.textContent = model;
     }
@@ -1949,7 +1938,7 @@
 
       const promptText = `Analyze the stock ticker ${activeTicker}. Current price is $${price}. Provide a high-conviction, professional 3-sentence read on this asset. Sentence 1: Focus on recent price action, volume momentum, and sentiment. Sentence 2: Identify the primary technical or fundamental risk factor right now. Sentence 3: Detail the critical price levels or catalysts to monitor over the next week. Ensure the response is exactly three sentences long and fits a high-density financial terminal style.`;
       
-      const model = localStorage.getItem('gemini_model') || 'gemini-3.5-flash';
+      const model = localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
       let attempts = 0;
       const maxAttempts = 3;
       let response = null;
@@ -2115,12 +2104,8 @@
     }
 
     function getAllFeedKeys() {
-      const keys = ['wsj', 'cnbc', 'reddit_stocks', 'reddit_wsb', 'google_news'];
-      const finnhubKey = localStorage.getItem('finnhub_api_key');
-      if (finnhubKey && finnhubKey.trim().length > 0) {
-        keys.push('general');
-      }
-      return keys;
+      // Return standard feeds only (Finnhub news filter replaced by Google News)
+      return ['wsj', 'cnbc', 'reddit_stocks', 'reddit_wsb', 'google_news'];
     }
 
     function updateNewsTabVisibility() {
@@ -2130,7 +2115,7 @@
       const activeTabBtn = container.querySelector('.tab-btn.active');
       const activeFeed = activeTabBtn ? activeTabBtn.getAttribute('data-feed') : 'all';
 
-      const finnhubKey = localStorage.getItem('finnhub_api_key');
+      // WSJ, CNBC, GOOGLE, r/stocks, r/wsb, and ALL tabs are always rendered
       let tabsHtml = `
         <button class="tab-btn ${activeFeed === 'all' ? 'active' : ''}" data-feed="all">ALL</button>
         <button class="tab-btn ${activeFeed === 'wsj' ? 'active' : ''}" data-feed="wsj">WSJ</button>
@@ -2139,13 +2124,6 @@
         <button class="tab-btn ${activeFeed === 'reddit_wsb' ? 'active' : ''}" data-feed="reddit_wsb">r/wsb</button>
         <button class="tab-btn ${activeFeed === 'google_news' ? 'active' : ''}" data-feed="google_news">GOOGLE</button>
       `;
-
-      if (finnhubKey && finnhubKey.trim().length > 0) {
-        tabsHtml += `
-          <button class="tab-btn ${activeFeed === 'general' ? 'active' : ''}" data-feed="general">FINNHUB MKT</button>
-          <button class="tab-btn ${activeFeed === 'company' ? 'active' : ''}" data-feed="company">FINNHUB CO</button>
-        `;
-      }
 
       container.innerHTML = tabsHtml;
 
@@ -2175,6 +2153,7 @@
       // Update notice banner visibility
       const noticeBar = document.getElementById('news-connection-notice');
       if (noticeBar) {
+        const finnhubKey = localStorage.getItem('finnhub_api_key');
         if (!localProxyActive && (!finnhubKey || finnhubKey.trim().length === 0)) {
           noticeBar.style.display = 'block';
         } else {
@@ -2499,7 +2478,7 @@
 
       // Fetch catalysts sequentially
       const geminiKey = localStorage.getItem('gemini_api_key');
-      const model = localStorage.getItem('gemini_model') || 'gemini-3.5-flash';
+      const model = localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
 
       for (let i = 0; i < filtered.length; i++) {
         const g = filtered[i];
@@ -2510,31 +2489,26 @@
           let newsText = '';
           let directHeadline = '';
 
-          // 1. Try Finnhub News directly if key is configured
-          const finnhubKey = localStorage.getItem('finnhub_api_key');
-          if (finnhubKey && finnhubKey.trim().length > 0) {
-            try {
-              const fromDate = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString().split('T')[0];
-              const toDate = new Date().toISOString().split('T')[0];
-              const res = await fetch(`https://finnhub.io/api/v1/company-news?symbol=${g.symbol}&from=${fromDate}&to=${toDate}&token=${finnhubKey}`);
-              if (res.ok) {
-                const newsJson = await res.json();
-                if (Array.isArray(newsJson) && newsJson.length > 0) {
-                  // Compile news text for Gemini fallback just in case
-                  newsText = newsJson.slice(0, 10).map(n => `Headline: ${n.headline}\nSummary: ${n.summary}`).join('\n');
+          // 1. Try Google News RSS directly via proxy (Finnhub news replaced by Google News)
+          try {
+            const googleNewsUrl = `https://news.google.com/rss/search?q=${g.symbol}+stock+when:1d&hl=en-US&gl=US&ceid=US:en`;
+            const xml = await fetchWithProxy(googleNewsUrl);
+            const parsed = parseXmlFeed(xml);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              // Compile news text for Gemini fallback just in case
+              newsText = parsed.slice(0, 10).map(item => `Headline: ${item.title}\nSummary: ${item.description || ''}`).join('\n');
 
-                  // Find if there is a recent headline (< 24 hours old)
-                  const sorted = [...newsJson].sort((a, b) => (b.datetime || 0) - (a.datetime || 0));
-                  const newest = sorted[0];
-                  const nowSec = Date.now() / 1000;
-                  if (newest.datetime && (nowSec - newest.datetime) < 24 * 3600) {
-                    directHeadline = newest.headline;
-                  }
-                }
+              // Find if there is a recent headline (< 24 hours old)
+              const sorted = [...parsed].sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+              const newest = sorted[0];
+              const pubTime = new Date(newest.pubDate).getTime();
+              const nowTime = Date.now();
+              if (!isNaN(pubTime) && (nowTime - pubTime) < 24 * 3600 * 1000) {
+                directHeadline = newest.title;
               }
-            } catch (fhErr) {
-              console.warn(`Direct Finnhub catalyst fetch failed for ${g.symbol}`, fhErr);
             }
+          } catch (gNewsErr) {
+            console.warn(`Direct Google News catalyst fetch failed for ${g.symbol}`, gNewsErr);
           }
 
           // 2. Try Yahoo News (RSS) if we don't have a direct headline yet
@@ -2701,7 +2675,7 @@
 
       container.innerHTML = `<tr><td colspan="2" style="text-align:center; color:var(--txt-sec); padding:20px;"><div class="spinner" style="margin: 0 auto 8px auto;"></div>Loading in-play stocks from Gemini...</td></tr>`;
 
-      const model = localStorage.getItem('gemini_model') || 'gemini-3.5-flash';
+      const model = localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
       const prompt = "Identify the top 10 stocks currently in play in the US stock market today. Return only a valid JSON array of objects, where each object has a 'symbol' (uppercase stock ticker) and a 'catalyst' (a short sentence explanation of why it is in play, maximum 8 words). Do not include any markdown code blocks, backticks, or other conversational text. Example: [{\"symbol\": \"AAPL\", \"catalyst\": \"iPhone sales surge\"}]";
 
       try {
@@ -3551,7 +3525,7 @@
       btn.innerHTML = `<div class="spinner" style="width:10px; height:10px; border-width:1px;"></div><span>Fetching...</span>`;
 
       const key = localStorage.getItem('gemini_api_key');
-      const model = localStorage.getItem('gemini_model') || 'gemini-3.5-flash';
+      const model = localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
 
       const aaiiEl = document.getElementById('val-aaii');
       const naaimEl = document.getElementById('val-naaim');
@@ -3803,7 +3777,7 @@ You must return a raw JSON block ONLY. Do not wrap in markdown code fences or ba
       output.textContent = 'Synthesizing news sentiment...';
 
       const key = localStorage.getItem('gemini_api_key');
-      const model = localStorage.getItem('gemini_model') || 'gemini-3.5-flash';
+      const model = localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
 
       if (!key || key.trim().length < 12) {
         setTimeout(() => {
@@ -4058,8 +4032,8 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
     window.addEventListener('load', async () => {
       // 1. Initial Local Storage states & Model Migration
       const storedModel = localStorage.getItem('gemini_model');
-      if (!storedModel || storedModel === 'gemini-2.5-flash' || storedModel === 'gemini-2.0-flash' || storedModel === 'gemini-1.5-flash') {
-        localStorage.setItem('gemini_model', 'gemini-3.5-flash');
+      if (!storedModel || storedModel === 'gemini-3.5-flash' || storedModel === 'gemini-2.5-flash' || storedModel === 'gemini-2.0-flash') {
+        localStorage.setItem('gemini_model', 'gemini-1.5-flash');
       }
       getPortfolio();
       getWatchlist();
@@ -4220,7 +4194,7 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
 
       setBtn.addEventListener('click', () => {
         apiInput.value = localStorage.getItem('gemini_api_key') || '';
-        document.getElementById('model-input').value = localStorage.getItem('gemini_model') || 'gemini-3.5-flash';
+        document.getElementById('model-input').value = localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
         document.getElementById('finnhub-key-input').value = localStorage.getItem('finnhub_api_key') || '';
         modal.style.display = 'flex';
       });
@@ -4230,7 +4204,7 @@ Format in clean markdown. Do not include markdown code fences or other wraps.`;
       cancelBtn.addEventListener('click', hideModal);
       saveBtn.addEventListener('click', async () => {
         localStorage.setItem('gemini_api_key', apiInput.value.trim());
-        localStorage.setItem('gemini_model', document.getElementById('model-input').value.trim() || 'gemini-3.5-flash');
+        localStorage.setItem('gemini_model', document.getElementById('model-input').value.trim() || 'gemini-1.5-flash');
         localStorage.setItem('finnhub_api_key', document.getElementById('finnhub-key-input').value.trim());
         updateAiStatusPill();
         hideModal();
