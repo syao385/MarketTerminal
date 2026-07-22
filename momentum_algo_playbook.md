@@ -5,16 +5,14 @@ This playbook defines the quantitative framework, calculations, and rules for id
 
 ---
 
-## 1. Advanced Volume Signature: Institutional Premarket RVOL
+## 1. Advanced Volume Signature: Institutional Relative Volume (RVOL)
 
-In institutional trading, absolute premarket volume (e.g., 300k shares) is secondary to **Relative Volume (RVOL)**. A large-cap stock trading 500k shares in premarket might represent normal liquidity, whereas a mid-cap stock trading 500k shares represents a massive institutional footprint.
+In institutional trading, absolute volume numbers (e.g., 300k shares) are secondary to **Relative Volume (RVOL)**. To prevent time-of-day volume distortions (the U-shape curve), institutions calculate distinct premarket and regular hours time-slice ratios.
 
-### A. The Calculations
-
-Institutions utilize two primary calculations to normalize premarket volume:
+### A. Premarket Calculations (04:00 AM - 09:30 AM EST)
 
 #### 1. Time-Slice Relative Volume ($RVOL_{TS}$)
-Premarket volume is highly time-dependent. To avoid time-of-day distortion, volume is measured relative to the historical average *at that exact time slice*:
+Premarket volume is measured relative to the historical average *at that exact time slice*:
 
 $$RVOL_{TS}(t) = \frac{\text{Cumulative Vol from 04:00 AM to time } t \text{ today}}{\text{Mean Cumulative Vol from 04:00 AM to time } t \text{ over last } 20 \text{ days}}$$
 
@@ -24,14 +22,32 @@ $$RVOL_{TS}(t) = \frac{\text{Cumulative Vol from 04:00 AM to time } t \text{ tod
     *   $RVOL_{TS} < 1.0$: Illiquid, thin, high-risk spread.
 
 #### 2. Premarket to Average Daily Volume Ratio ($Vol_{PM}/ADV$)
-This metric measures the percentage of the 30-day Average Daily Volume (ADV) traded *before the opening bell*:
+This measures the percentage of the 30-day Average Daily Volume (ADV) traded *before the opening bell*:
 
 $$\text{PM/ADV Ratio} = \frac{\text{Total Volume traded from 04:00 AM to 09:30 AM today}}{\text{30-Day Average Daily Volume (ADV)}}$$
 
-*   **Thresholds:**
-    *   **$\text{PM/ADV Ratio} \ge 5\%$:** Historic institutional block positioning (indicates a high-probability **Episodic Pivot**).
-    *   **$2\% \le \text{PM/ADV Ratio} < 5\%$:** High-conviction Gap and Go candidate.
-    *   **$\text{PM/ADV Ratio} < 1\%$:** Low-conviction, retail-dominated gap; high probability of fading.
+---
+
+### B. Regular Market Hour & ORB Calculations (09:30 AM - 04:00 PM EST)
+
+#### 1. Regular Hours Time-Slice Relative Volume ($RVOL_{RM}$)
+During regular trading hours, daily volume cannot be compared statically. For intraday breakouts—especially the **15-minute Opening Range Breakout (ORB) evaluated at 09:45 AM**—volume must be measured relative to the historical volume traded in that *same opening interval*:
+
+$$RVOL_{RM}(t) = \frac{\text{Cumulative Vol from 09:30 AM to regular-hours time } t \text{ today}}{\text{Mean Cumulative Vol from 09:30 AM to time } t \text{ over last } 20 \text{ days}}$$
+
+*   **ORB Evaluation (at 09:45 AM, $t = 15\text{ mins}$):**
+    $$RVOL_{RM}(09:45\text{ AM}) = \frac{\text{Volume traded between 09:30 AM and 09:45 AM today}}{\text{Mean Volume traded between 09:30 AM and 09:45 AM over last } 20 \text{ days}}$$
+    *   **Thresholds for Breakouts:**
+        *   **$RVOL_{RM}(09:45\text{ AM}) \ge 4.0$:** High-Conviction Institutional breakout. The volume is $+400\%$ above historical opening baseline.
+        *   **$2.0 \le RVOL_{RM}(09:45\text{ AM}) < 4.0$:** Moderate conviction; wait for opening range pullback hold.
+        *   **$RVOL_{RM}(09:45\text{ AM}) < 1.5$:** Failed volume signature. Highly likely to result in a Gap & Fade or flat consolidation.
+
+#### 2. Volume Pacing & Acceleration ($Acc_{Vol}$)
+To detect automated block sweeps before a candle closes, algorithms measure the rate of change of volume inflow per minute:
+
+$$Acc_{Vol}(m) = \frac{\text{Volume traded in current minute } m}{\text{Average volume per minute during the same period over last } 20 \text{ days}}$$
+
+If $Acc_{Vol} > 5.0$ within any 1-minute window inside the opening range, it signals a high-velocity institutional sweep, alerting the system to execute breakout orders immediately at the PMH/ORL line.
 
 ---
 
