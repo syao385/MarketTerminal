@@ -117,5 +117,11 @@ Executing the validator script on `NVDA` for the `Standard ORB (Setup 12)` over 
 - **Detailed Y-Axis Dividers:** Expanded the Y-axis label array from two (Max/Min) to **five distinct price levels**, aligning exactly with the horizontal grid division lines.
 - **Scanner Cockpit Click Synchronization:** Linked cockpit trigger table row clicks to automatically execute `loadTicker()` alongside updating scorecard details, keeping price chart overlays and scorecards in sync.
 
+### E. API Server Startup Fixes & Settings Manager
+- **Start Script Dependency Correction:** Added `--with pyyaml` to `start_indicators_server.bat`. This fixes a python backend `ModuleNotFoundError: No module named 'yaml'` crash upon double-clicking the startup script.
+- **UI Settings Credentials Inputs:** Added **Alpaca API Key ID** and **Alpaca Secret Key** input forms inside the Settings Configuration Modal of `index.html`.
+- **Backend Key Synchronizations:** Created `/api/settings` GET/POST endpoints inside the python `server.py` that synchronize user keys entered in the UI to the local configuration `config/alpaca_config.json` file.
+
+
 
 
