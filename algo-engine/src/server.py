@@ -1,10 +1,13 @@
 import uvicorn
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import yfinance as yf
 import numpy as np
 import pandas as pd
 import logging
+import json
+import os
 from typing import Optional
 
 from calculations.rvol import calculate_time_slice_rvol, calculate_pm_to_adv_ratio
@@ -239,6 +242,50 @@ def get_scanner_results():
         return {"success": True, "scans": res}
     except Exception as e:
         logger.error(f"Scanner execution failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class AlpacaSettings(BaseModel):
+    api_key_id: str
+    secret_key: str
+
+@app.get("/api/settings")
+def get_settings():
+    """
+    Reads the user's Alpaca credentials from config/alpaca_config.json.
+    """
+    config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config", "alpaca_config.json"))
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r") as f:
+                config_data = json.load(f)
+                return {
+                    "success": True,
+                    "api_key_id": config_data.get("api_key_id", ""),
+                    "secret_key": config_data.get("secret_key", "")
+                }
+        except Exception as e:
+            logger.error(f"Failed to read settings: {e}")
+    return {"success": True, "api_key_id": "", "secret_key": ""}
+
+@app.post("/api/settings")
+def save_settings(settings: AlpacaSettings):
+    """
+    Saves the user's Alpaca credentials to config/alpaca_config.json.
+    """
+    try:
+        config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config", "alpaca_config.json"))
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        config_data = {
+            "api_key_id": settings.api_key_id.strip(),
+            "secret_key": settings.secret_key.strip()
+        }
+        with open(config_path, "w") as f:
+            json.dump(config_data, f, indent=4)
+        logger.info("Successfully updated Alpaca settings config on disk.")
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Failed to save settings: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
