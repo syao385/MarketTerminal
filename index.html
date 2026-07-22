@@ -1358,6 +1358,14 @@
     let tvWidget = null;
     function initTradingViewWidget(symbol) {
       const container = document.getElementById('chart-container');
+      
+      if (activePlaybookIndicators && activePlaybookIndicators.symbol === symbol) {
+        const ctrls = document.querySelector('.chart-ctrls');
+        if (ctrls) ctrls.style.display = 'flex';
+        renderCanvasFallbackChart('chart-container', activePlaybookIndicators.points);
+        return;
+      }
+      
       container.innerHTML = `<div id="tradingview-widget" style="width: 100%; height: 100%;"></div>`;
       
       let tvSymbol = symbol;
@@ -1422,22 +1430,22 @@
         return;
       }
 
-      const closes = points.map(p => p.close);
-      const minPrice = Math.min(...closes);
-      const maxPrice = Math.max(...closes);
+      // Calculate chart boundaries based on candlestick wicks (High/Low)
+      const highs = points.map(p => p.high || p.close);
+      const lows = points.map(p => p.low || p.close);
+      let minPrice = Math.min(...lows);
+      let maxPrice = Math.max(...highs);
       
       let chartMin = minPrice;
       let chartMax = maxPrice;
       
       if (activePlaybookIndicators && activePlaybookIndicators.symbol === activeTicker) {
         const gex = activePlaybookIndicators.gex;
-        const buffer = (maxPrice - minPrice) * 0.25; // 25% buffer
+        const buffer = (maxPrice - minPrice) * 0.25;
         
-        // If Call Wall is close to maxPrice, expand chartMax to show it
         if (gex.call_wall && gex.call_wall > maxPrice && gex.call_wall < maxPrice + buffer) {
           chartMax = gex.call_wall;
         }
-        // If Put Wall is close to minPrice, expand chartMin to show it
         if (gex.put_wall && gex.put_wall < minPrice && gex.put_wall > minPrice - buffer) {
           chartMin = gex.put_wall;
         }
@@ -1445,36 +1453,117 @@
       
       const range = (chartMax - chartMin) || 1;
 
+      // Draw background grid lines
       ctx.strokeStyle = '#E8E8EC'; ctx.lineWidth = 1;
       for (let i = 1; i < 4; i++) {
         ctx.beginPath(); ctx.moveTo(0, (height / 4) * i); ctx.lineTo(width, (height / 4) * i); ctx.stroke();
       }
 
-      ctx.strokeStyle = '#6366F1'; ctx.lineWidth = 2; ctx.beginPath();
-      const getX = (idx) => (idx / (points.length - 1)) * (width - 40) + 10;
-      const getY = (val) => height - 20 - ((val - chartMin) / range) * (height - 40);
+      const getX = (idx) => (idx / (points.length - 1)) * (width - 60) + 15;
+      const getY = (val) => height - 25 - ((val - chartMin) / range) * (height - 50);
 
+      // 1. Draw Unmitigated Gaps and Fair Value Gaps (FVGs)
+      if (activePlaybookIndicators && activePlaybookIndicators.symbol === activeTicker) {
+        const drawZone = (zone, label, colorFill, colorBorder) => {
+          if (zone.top && zone.bottom) {
+            const yTop = getY(zone.top);
+            const yBottom = getY(zone.bottom);
+            const xStart = getX(zone.start_idx);
+            const xEnd = width - 55;
+            
+            // Draw transparent rectangle
+            ctx.fillStyle = colorFill;
+            ctx.fillRect(xStart, Math.min(yTop, yBottom), xEnd - xStart, Math.abs(yTop - yBottom));
+            
+            // Draw thin dashed border
+            ctx.strokeStyle = colorBorder;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.strokeRect(xStart, Math.min(yTop, yBottom), xEnd - xStart, Math.abs(yTop - yBottom));
+            ctx.setLineDash([]);
+            
+            // Label
+            ctx.font = '8px JetBrains Mono';
+            ctx.fillStyle = colorBorder;
+            ctx.textAlign = 'left';
+            ctx.fillText(label, xStart + 4, Math.min(yTop, yBottom) + 9);
+          }
+        };
+
+        const gaps = activePlaybookIndicators.gaps || [];
+        const fvgs = activePlaybookIndicators.fvgs || [];
+
+        gaps.forEach(g => {
+          const fill = g.type === 'bullish' ? 'rgba(16, 185, 129, 0.06)' : 'rgba(239, 68, 68, 0.06)';
+          const border = g.type === 'bullish' ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)';
+          drawZone(g, g.type === 'bullish' ? 'BULL GAP' : 'BEAR GAP', fill, border);
+        });
+
+        fvgs.forEach(f => {
+          const fill = f.type === 'bullish' ? 'rgba(59, 130, 246, 0.06)' : 'rgba(239, 68, 68, 0.06)';
+          const border = f.type === 'bullish' ? 'rgba(59, 130, 246, 0.35)' : 'rgba(239, 68, 68, 0.35)';
+          drawZone(f, f.type === 'bullish' ? 'BULL FVG' : 'BEAR FVG', fill, border);
+        });
+      }
+
+      // 2. Draw Candlesticks
+      const bodyWidth = Math.max(3, ((width - 60) / points.length) * 0.7);
       points.forEach((p, idx) => {
-        const x = getX(idx), y = getY(p.close);
-        if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        const x = getX(idx);
+        
+        if (p.open !== undefined && p.high !== undefined && p.low !== undefined) {
+          const isGreen = p.close >= p.open;
+          const color = isGreen ? '#10B981' : '#EF4444';
+          
+          // Wick
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(x, getY(p.high));
+          ctx.lineTo(x, getY(p.low));
+          ctx.stroke();
+          
+          // Body
+          ctx.fillStyle = color;
+          ctx.fillRect(
+            x - bodyWidth / 2,
+            Math.min(getY(p.open), getY(p.close)),
+            bodyWidth,
+            Math.max(1.5, Math.abs(getY(p.open) - getY(p.close)))
+          );
+        } else {
+          // Fallback line connection
+          ctx.strokeStyle = '#6366F1'; ctx.lineWidth = 2;
+          const y = getY(p.close);
+          if (idx === 0) ctx.beginPath().moveTo(x, y); else ctx.lineTo(x, y);
+          if (idx === points.length - 1) ctx.stroke();
+        }
       });
-      ctx.stroke();
 
-      ctx.lineTo(getX(points.length - 1), height - 10);
-      ctx.lineTo(getX(0), height - 10);
-      ctx.closePath();
-      const grad = ctx.createLinearGradient(0, 0, 0, height);
-      grad.addColorStop(0, 'rgba(99, 102, 241, 0.2)');
-      grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-      ctx.fillStyle = grad; ctx.fill();
+      // 3. Draw SMAs (20, 50, 200)
+      const drawMALine = (key, color) => {
+        ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath();
+        let isStarted = false;
+        points.forEach((p, idx) => {
+          if (p[key] !== null && p[key] !== undefined) {
+            const x = getX(idx), y = getY(p[key]);
+            if (!isStarted) { ctx.moveTo(x, y); isStarted = true; }
+            else ctx.lineTo(x, y);
+          }
+        });
+        if (isStarted) ctx.stroke();
+      };
+      drawMALine('sma_20', '#3B82F6');   // SMA 20 (Blue)
+      drawMALine('sma_50', '#F59E0B');   // SMA 50 (Orange)
+      drawMALine('sma_200', '#8B5CF6');  // SMA 200 (Purple)
 
-      // Draw horizontal GEX walls
+      // 4. Draw horizontal GEX walls
       if (activePlaybookIndicators && activePlaybookIndicators.symbol === activeTicker) {
         const gex = activePlaybookIndicators.gex;
         const gexLines = [
           { val: gex.call_wall, label: 'Call Wall', color: '#10B981' },
           { val: gex.put_wall, label: 'Put Wall', color: '#EF4444' },
-          { val: gex.gex_flip, label: 'GEX Flip', color: '#F59E0B' }
+          { val: gex.gex_flip, label: 'GEX Flip', color: '#6B7280' }
         ];
 
         gexLines.forEach(line => {
@@ -1484,30 +1573,30 @@
             ctx.lineWidth = 1.5;
             ctx.setLineDash([5, 3]);
             ctx.beginPath();
-            ctx.moveTo(10, y);
+            ctx.moveTo(15, y);
             ctx.lineTo(width - 55, y);
             ctx.stroke();
-            ctx.setLineDash([]); // Reset
+            ctx.setLineDash([]);
             
-            // Draw label text next to line
             ctx.font = '9px JetBrains Mono';
             ctx.fillStyle = line.color;
             ctx.textAlign = 'left';
-            ctx.fillText(`${line.label}: $${line.val.toFixed(2)}`, 15, y - 4);
+            ctx.fillText(`${line.label}: $${line.val.toFixed(2)}`, 20, y - 4);
           }
         });
-
-        // Overlay RVOL in the top right
-        const rvol = activePlaybookIndicators.rvol;
-        ctx.font = '10px JetBrains Mono';
-        ctx.fillStyle = '#9CA3AF';
-        ctx.textAlign = 'right';
-        ctx.fillText(`RVOL TS: ${rvol.rvol_ts.toFixed(2)}x | RVOL RM: ${rvol.rvol_rm.toFixed(2)}x`, width - 5, 28);
       }
 
+      // Draw Chart Price Legend/Labels on Y-Axis
       ctx.font = '10px JetBrains Mono'; ctx.fillStyle = '#6B6B6B'; ctx.textAlign = 'right';
       ctx.fillText(chartMax.toFixed(2), width - 5, 15);
       ctx.fillText(chartMin.toFixed(2), width - 5, height - 5);
+
+      // Draw Indicator Legend at top-left corner
+      ctx.font = '10px JetBrains Mono';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#3B82F6'; ctx.fillText('SMA20', 15, 15);
+      ctx.fillStyle = '#F59E0B'; ctx.fillText('SMA50', 60, 15);
+      ctx.fillStyle = '#8B5CF6'; ctx.fillText('SMA200', 105, 15);
     }
 
     // Active Stock Details Updates
