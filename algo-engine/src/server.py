@@ -1,14 +1,17 @@
 import uvicorn
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import yfinance as yf
 import numpy as np
 import pandas as pd
 import logging
+from typing import Optional
 
 from calculations.rvol import calculate_time_slice_rvol, calculate_pm_to_adv_ratio
 from calculations.gex import find_gex_key_levels, get_gamma_regime
 from calculations.indicators import calculate_smas, find_unmitigated_gaps, find_unmitigated_fvgs
+from calculations.backtester import PlaybookBacktester
+from calculations.optimizer import SetupParameterOptimizer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("AetherServer")
@@ -173,6 +176,55 @@ def get_indicators(
     except Exception as e:
         logger.error(f"Error compiling indicators for {symbol}: {e}")
         return {"success": False, "error": str(e)}
+
+
+@app.get("/api/backtest")
+def get_backtest(
+    symbol: str = Query(..., description="Ticker symbol (e.g. SPY, NVDA)"),
+    setup_id: str = Query(..., description="Playbook setup ID (e.g. setup_12, setup_13)"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    capital: float = Query(100000.0, description="Initial starting capital")
+):
+    """
+    Executes a historical backtest of the specified setup.
+    """
+    logger.info(f"API: Running backtest for {symbol} - {setup_id}...")
+    backtester = PlaybookBacktester()
+    res = backtester.run_backtest(
+        symbol=symbol,
+        setup_id=setup_id,
+        start_date=start_date,
+        end_date=end_date,
+        initial_capital=capital
+    )
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("error", "Backtest failed."))
+    return res
+
+
+@app.get("/api/optimize")
+def get_optimization(
+    symbol: str = Query(..., description="Ticker symbol"),
+    setup_id: str = Query(..., description="Playbook setup ID"),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None)
+):
+    """
+    Executes a grid sweep parameter optimization for a setup.
+    """
+    logger.info(f"API: Optimizing parameters for {symbol} - {setup_id}...")
+    optimizer = SetupParameterOptimizer()
+    res = optimizer.optimize_setup_parameters(
+        symbol=symbol,
+        setup_id=setup_id,
+        start_date=start_date,
+        end_date=end_date
+    )
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("error", "Optimization failed."))
+    return res
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8080)

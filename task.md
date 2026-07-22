@@ -1,13 +1,13 @@
 # Task List - Aether Momentum Algorithmic Trading System
 
-- `[ ]` Milestone 1: Local Data Engine & Calculations
-  - `[ ]` Create `feature/algo-integration` git branch
-  - `[ ]` Initialize `algo-engine/` subfolder structure
-  - `[ ]` Create Python `requirements.txt` and configurations (`config/setups.yaml`)
-  - `[ ]` Build Alpaca data fetcher (REST & WebSocket connections)
-  - `[ ]` Implement premarket Time-Slice RVOL ($RVOL_{TS}$) calculations
-  - `[ ]` Implement regular hours Time-Slice RVOL ($RVOL_{RM}$) and Volume Pacing ($Acc_{Vol}$) calculations
-  - `[ ]` Implement daily option GEX parser (Put/Call Walls and GEX Flip levels)
+- `[/]` Milestone 1: Local Data Engine & Calculations
+  - `[x]` Create `feature/algo-integration` git branch
+  - `[x]` Initialize `algo-engine/` subfolder structure
+  - `[x]` Create Python `requirements.txt` and configurations (`config/setups.yaml`)
+  - `[/]` Build Alpaca data fetcher (REST & WebSocket connections)
+  - `[x]` Implement premarket Time-Slice RVOL ($RVOL_{TS}$) calculations
+  - `[x]` Implement regular hours Time-Slice RVOL ($RVOL_{RM}$) and Volume Pacing ($Acc_{Vol}$) calculations
+  - `[x]` Implement daily option GEX parser (Put/Call Walls and GEX Flip levels)
 - `[ ]` Milestone 2: Setup Registry, Scanners & Backtester
   - `[ ]` Define Python `BaseSetup` class and registry loader
   - `[ ]` Implement logic triggers for the 15 setups
