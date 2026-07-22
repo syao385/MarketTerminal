@@ -1,0 +1,28 @@
+# Task List - Aether Momentum Algorithmic Trading System
+
+- `[ ]` Milestone 1: Local Data Engine & Calculations
+  - `[ ]` Create `feature/algo-integration` git branch
+  - `[ ]` Initialize `algo-engine/` subfolder structure
+  - `[ ]` Create Python `requirements.txt` and configurations (`config/setups.yaml`)
+  - `[ ]` Build Alpaca data fetcher (REST & WebSocket connections)
+  - `[ ]` Implement premarket Time-Slice RVOL ($RVOL_{TS}$) calculations
+  - `[ ]` Implement regular hours Time-Slice RVOL ($RVOL_{RM}$) and Volume Pacing ($Acc_{Vol}$) calculations
+  - `[ ]` Implement daily option GEX parser (Put/Call Walls and GEX Flip levels)
+- `[ ]` Milestone 2: Setup Registry, Scanners & Backtester
+  - `[ ]` Define Python `BaseSetup` class and registry loader
+  - `[ ]` Implement logic triggers for the 15 setups
+  - `[ ]` Implement the 3 tailored scorecards (MOS-B, MOS-A, MOS-P)
+  - `[ ]` Implement historical backtesting loop (`engine.py`)
+  - `[ ]` Implement parameter sweep optimizer (`optimizer.py`)
+  - `[ ]` Build TradingView/ThinkOrSwim CSV visual exporters
+- `[ ]` Milestone 3: Order Execution & Alpaca Integration
+  - `[ ]` Connect execution layer to Alpaca Paper Trading API
+  - `[ ]` Implement Stop Limit orders with slippage limit ceiling checks
+  - `[ ]` Implement dynamic position sizing based on MOS scoring
+  - `[ ]` Implement system-wide circuit breakers and sector caps
+  - `[ ]` Implement setup-tagged order journaling and database logging
+- `[ ]` Milestone 4: Cockpit Integration & Charting Panel
+  - `[ ]` Build local WebSocket server to stream metrics to cockpit
+  - `[ ]` Design the "Algo Control Panel" widget in index.html
+  - `[ ]` Integrate Lightweight Charts for visual signal overlays
+  - `[ ]` End-to-end dry run validation
