@@ -4,7 +4,7 @@ echo ============================================================
 echo      RUNNING PLAYBOOK CALCULATIONS MATHEMATICAL CHECK
 echo ============================================================
 echo.
-uv run --with pandas --with numpy --with yfinance algo-engine/verify_playbook_calculations.py
+uv run --python 3.12 --with pandas --with numpy --with yfinance algo-engine/verify_playbook_calculations.py
 echo.
 echo ============================================================
 echo   Validation finished.

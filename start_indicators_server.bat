@@ -8,6 +8,6 @@ echo Server will run at http://127.0.0.1:8080
 echo Leave this window open while trading to see live RVOL and GEX
 echo overlays on your Market Terminal chart.
 echo.
-uv run --with fastapi --with uvicorn --with yfinance --with numpy --with pandas --with pyyaml algo-engine/src/server.py
+uv run --python 3.12 --with fastapi --with uvicorn --with yfinance --with numpy --with pandas --with pyyaml --with httpx algo-engine/src/server.py
 echo.
 pause

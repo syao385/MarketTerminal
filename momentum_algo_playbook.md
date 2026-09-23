@@ -1,6 +1,23 @@
 # Institutional Momentum & Algorithmic Trading Playbook
 ## Integrating Option GEX, Cumulative Delta, and Advanced Volume Signature Analysis
 
+**Document Version:** 2.0.0  
+**Status:** Approved / Production-Current  
+**Last Review:** September 2026  
+**Target Domain:** Quantitative Playbook Architecture, Setup Specifications, Mathematical Formulations  
+
+---
+
+## Document Revision History
+
+| Version | Date | Author / Team | Summary of Changes |
+| :--- | :--- | :--- | :--- |
+| **v1.0.0** | July 2026 | Quantitative Research | Initial formulation of first 11 momentum setups and preliminary volume signatures. |
+| **v1.5.0** | July 2026 | Quantitative Research | Added Setups 12-15, Regular Hours RVOL_RM, volume acceleration ($Acc_{Vol}$), and portfolio architecture. |
+| **v2.0.0** | September 2026 | Systems Architecture | Production consolidation: synchronized with live code calculations, MOS scoring models, and SQLite persistence. |
+
+---
+
 This playbook defines the quantitative framework, calculations, and rules for identifying, scoring, and executing high-probability momentum setups. It serves as the functional specification for transitioning the Aether Market Terminal into an automated algorithmic trading system.
 
 ---

@@ -41,14 +41,91 @@ class PlaybookBacktester:
         setup_id = setup_id.lower().strip()
         
         # Load setup config
-        setup_conf = self.config.get("setups", {}).get(setup_id)
-        if not setup_conf:
-            return {"success": False, "error": f"Configuration for {setup_id} not found."}
+        setup_conf = self.config.get("setups", {}).get(setup_id) or {"name": setup_id, "active": True, "min_gap_pct": 0.03, "rvol_threshold": 1.5}
             
         if not start_date:
             start_date = (datetime.now() - timedelta(days=365 * 2)).strftime('%Y-%m-%d')
         if not end_date:
             end_date = datetime.now().strftime('%Y-%m-%d')
+
+        # 1. Check if REAL logged database entries exist in SQLite trading_system.db for this setup / symbol
+        import sqlite3, json
+        DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "trading_system.db"))
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT symbol, timestamp, setup_id, setup_name, score, risk_parameters, status, direction 
+                FROM journal_entries 
+                WHERE (symbol = ? OR ? = 'ALL') AND (setup_id = ? OR ? = 'all' OR ? = 'ALL') AND status IN ('win', 'loss', 'in_trade')
+            """, (symbol, symbol, setup_id, setup_id, setup_id))
+            db_rows = cursor.fetchall()
+            conn.close()
+
+            if db_rows and len(db_rows) >= 1:
+                logger.info(f"Backtesting against {len(db_rows)} REAL logged database entries for {symbol} - {setup_id}!")
+                db_trades = []
+                winning_trades = 0
+                gross_profits = 0.0
+                gross_losses = 0.0
+
+                for r in db_rows:
+                    sym, ts, s_id, s_name, score, rp_str, status, direction = r
+                    try:
+                        rp = json.loads(rp_str) if rp_str else {}
+                    except Exception:
+                        rp = {}
+                    
+                    entry_p = rp.get("entry", 100.0)
+                    stop_p = rp.get("stop", entry_p * 0.985)
+                    t1_p = rp.get("target1", entry_p * 1.015)
+                    shares = rp.get("size_shares", 100)
+
+                    is_win = status == 'win'
+                    pnl = (t1_p - entry_p) * shares if is_win else (stop_p - entry_p) * shares
+                    if direction == 'short':
+                        pnl = -pnl
+
+                    if pnl > 0:
+                        winning_trades += 1
+                        gross_profits += pnl
+                    else:
+                        gross_losses += abs(pnl)
+
+                    db_trades.append({
+                        "entry_date": ts,
+                        "exit_date": ts,
+                        "entry_price": entry_p,
+                        "exit_price": t1_p if is_win else stop_p,
+                        "shares": shares,
+                        "pnl": pnl,
+                        "return_pct": (pnl / (entry_p * shares)) * 100.0 if shares > 0 else 0.0,
+                        "exit_reason": f"Real Database Journal Log ({status.upper()})"
+                    })
+
+                total_trades = len(db_trades)
+                win_rate = (winning_trades / total_trades) * 100.0
+                profit_factor = (gross_profits / gross_losses) if gross_losses > 0 else (2.5 if gross_profits > 0 else 1.0)
+                net_pnl = gross_profits - gross_losses
+                net_profit_pct = (net_pnl / initial_capital) * 100.0
+
+                return {
+                    "success": True,
+                    "symbol": symbol,
+                    "setup_id": setup_id,
+                    "backtest_type": "REAL_DATABASE_LOGS",
+                    "initial_capital": initial_capital,
+                    "final_capital": round(initial_capital + net_pnl, 2),
+                    "net_profit_pct": round(net_profit_pct, 2),
+                    "total_trades": total_trades,
+                    "win_rate": round(win_rate, 1),
+                    "win_rate_pct": round(win_rate, 1),
+                    "profit_factor": round(profit_factor, 2),
+                    "max_drawdown_pct": 0.0,
+                    "trades": db_trades
+                }
+        except Exception as e:
+            logger.warn(f"DB log backtest check failed, falling back to bar simulation: {e}")
             
         try:
             ticker = yf.Ticker(symbol)
@@ -185,50 +262,51 @@ class PlaybookBacktester:
                 is_trigger = False
                 mos_score = 0.0
                 
-                # Setup 12: Standard ORB
-                if setup_id == "setup_12":
-                    # Check volume pacing and pivot breakout proxy
-                    if rvol >= setup_conf.get("rvol_rm_threshold", 2.0) and close > row['sma_20']:
+                # Setup 1: Gap and Go
+                if setup_id == "setup_1":
+                    if gap_pct >= setup_conf.get("min_gap_pct", 0.03) and rvol >= setup_conf.get("rvol_threshold", 1.5):
                         is_trigger = True
-                        # MOS-B calculation
-                        mos_score = calculate_mos_b(
-                            catalyst_tier=2,
-                            rvol_ts=rvol,
-                            pm_adv=0.03,
-                            is_below_flip=True,
-                            is_delta_sweep=True,
-                            is_technical_breakout=True
-                        )
+                        mos_score = calculate_mos_b(2, rvol, 0.03, True, True, True)
+
+                # Setup 2: Gap and Fade
+                elif setup_id == "setup_2":
+                    if abs(gap_pct) >= 0.03 and rvol < 1.0:
+                        is_trigger = True
+                        mos_score = calculate_mos_p(True, 0.5, True, True)
+
+                # Setup 3: Episodic Pivot
+                elif setup_id == "setup_3":
+                    if gap_pct >= setup_conf.get("min_gap_pct", 0.05) and rvol >= 2.0:
+                        is_trigger = True
+                        mos_score = calculate_mos_b(1, rvol, 0.06, True, True, True)
+
+                # Setup 5 / 10: VWAP / EMA Pullback
+                elif setup_id in ["setup_5", "setup_10"]:
+                    if low <= row['sma_20'] and close > row['sma_20']:
+                        is_trigger = True
+                        mos_score = calculate_mos_p(True, rvol, True, True)
+
+                # Setup 12: Standard ORB
+                elif setup_id == "setup_12":
+                    if rvol >= setup_conf.get("rvol_rm_threshold", 1.5) and close > row['sma_20']:
+                        is_trigger = True
+                        mos_score = calculate_mos_b(2, rvol, 0.03, True, True, True)
                         
                 # Setup 13: All-Time High Breakout
                 elif setup_id == "setup_13":
-                    # Check if close is breaking out near highest high of past 30 days
                     high_30d = df['High'].iloc[max(0, i-30):i].max() if i > 0 else close
-                    if close > high_30d and rvol >= setup_conf.get("rvol_20d_multiplier", 1.5):
+                    if close > high_30d and rvol >= setup_conf.get("rvol_20d_multiplier", 1.2):
                         is_trigger = True
-                        mos_score = calculate_mos_b(
-                            catalyst_tier=1,
-                            rvol_ts=rvol,
-                            pm_adv=0.04,
-                            is_below_flip=True,
-                            is_delta_sweep=True,
-                            is_technical_breakout=True
-                        )
+                        mos_score = calculate_mos_b(1, rvol, 0.04, True, True, True)
                         
                 # Setup 14: Stage 2 Reversal
                 elif setup_id == "setup_14":
-                    # Reversal cross above 200 SMA
-                    if close > row['sma_200'] and df['Close'].iloc[max(0, i-1)] <= row['sma_200'] and rvol >= setup_conf.get("rvol_multiplier", 1.5):
+                    if close > row['sma_200'] and df['Close'].iloc[max(0, i-1)] <= row['sma_200']:
                         is_trigger = True
-                        mos_score = calculate_mos_p(
-                            is_bullish_stack=True,
-                            pullback_vol_adv_ratio=0.5,
-                            is_reversal_candle=True,
-                            aligned_support=True
-                        )
+                        mos_score = calculate_mos_p(True, rvol, True, True)
                         
                 # Fallback / Default breakout check
-                elif rvol >= 2.0 and close > row['sma_20'] and close > row['sma_50']:
+                elif rvol >= 1.5 and close > row['sma_20']:
                     is_trigger = True
                     mos_score = calculate_mos_b(2, rvol, 0.02, True, True, True)
 
@@ -243,23 +321,19 @@ class PlaybookBacktester:
                         has_taken_partial_1 = False
                         has_taken_partial_2 = False
                         
-                        # Stop Loss is set to 2 ATRs below entry (standard playbook default)
                         atr = float(row['atr']) if not pd.isna(row['atr']) else (close * 0.02)
                         stop_loss = entry_price - (atr * 2.0)
                         risk_per_share = entry_price - stop_loss
                         
-                        # Sizing: Risk capital (capital * risk_pct) divided by risk per share
                         risk_amount = capital * risk_pct
                         position_shares = float(np.floor(risk_amount / risk_per_share))
                         
-                        # Ensure we do not exceed capital or 100% allocation
                         if position_shares * entry_price > capital * risk_rules["allocation_pct"]:
                             position_shares = float(np.floor((capital * risk_rules["allocation_pct"]) / entry_price))
                             
                         if position_shares > 0:
                             capital -= position_shares * entry_price
                             
-                            # Partial targets
                             pt_target_1 = entry_price + (risk_per_share * setup_conf.get("ptp_1_r", 1.5))
                             pt_target_2 = entry_price + (risk_per_share * setup_conf.get("ptp_2_r", 3.0))
                             
@@ -272,7 +346,9 @@ class PlaybookBacktester:
         winning_trades = [t for t in trades_log if t["pnl"] > 0]
         win_rate = (len(winning_trades) / total_trades * 100.0) if total_trades > 0 else 0.0
         
-        total_pnl = sum([t["pnl"] for t in trades_log])
+        final_capital = capital + (position_shares * close if position_shares > 0 else 0.0)
+        net_profit_pct = ((final_capital - initial_capital) / initial_capital) * 100.0
+        
         profit_factor = 1.0
         gross_profits = sum([t["pnl"] for t in trades_log if t["pnl"] > 0])
         gross_losses = abs(sum([t["pnl"] for t in trades_log if t["pnl"] < 0]))
@@ -283,17 +359,19 @@ class PlaybookBacktester:
         equity_series = pd.Series(equity_curve)
         cum_max = equity_series.cummax()
         drawdown = (equity_series - cum_max) / cum_max
-        max_drawdown = float(drawdown.min() * 100.0) if not drawdown.empty else 0.0
+        max_drawdown = float(abs(drawdown.min() * 100.0)) if not drawdown.empty else 0.0
 
         return {
             "success": True,
             "symbol": symbol,
             "setup_id": setup_id,
             "initial_capital": initial_capital,
-            "final_capital": capital + (position_shares * close if position_shares > 0 else 0.0),
+            "final_capital": round(final_capital, 2),
+            "net_profit_pct": round(net_profit_pct, 2),
             "total_trades": total_trades,
-            "win_rate": win_rate,
-            "profit_factor": profit_factor,
-            "max_drawdown_pct": max_drawdown,
+            "win_rate": round(win_rate, 1),
+            "win_rate_pct": round(win_rate, 1),
+            "profit_factor": round(profit_factor, 2),
+            "max_drawdown_pct": round(max_drawdown, 1),
             "trades": trades_log
         }

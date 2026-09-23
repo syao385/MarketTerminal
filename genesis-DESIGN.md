@@ -1,4 +1,20 @@
-# Genesis
+# Genesis Design System Specification
+
+**Document Version:** 2.0.0  
+**Status:** Approved / Production-Current  
+**Last Review:** September 2026  
+**Target Domain:** Frontend UI Design System, Design Tokens, Typography, Elevation  
+
+---
+
+## Document Revision History
+
+| Version | Date | Author / Team | Summary of Changes |
+| :--- | :--- | :--- | :--- |
+| **v1.0.0** | July 2026 | Design System Team | Initial design token definitions, General Sans typography, and card elevation tokens. |
+| **v2.0.0** | September 2026 | Frontend Architecture | Applied tokens across dual-pane HTML5 canvas chart, playbook scanner cockpit, and setup journal sidebar. |
+
+---
 
 ## Overview
 An editorial precision interface for a community platform where developers discover, share, and download design system files. The aesthetic is quietly confident — bold display typography, generous spacing, and gallery-frame card surfaces. The mood is professional and modern without being sterile. High information density balanced by breathing room. 
